@@ -4399,11 +4399,11 @@ If NO-TMM is non-nil, leave `transient-mark-mode' alone."
       (setq transient-mark-mode 'lambda))
     (run-hooks 'activate-mark-hook)))
 
-(defun set-mark (pos)
-  "Set this buffer's mark to POS.  Don't use this function!
-That is to say, don't use this function unless you want
-the user to see that the mark has moved, and you want the previous
-mark position to be lost.
+(defun set-mark (pos-or-marker)
+  "Set this buffer's mark to POS-OR-MARKER.  Don't use this
+function!  That is to say, don't use this function unless you
+want the user to see that the mark has moved, and you want the
+previous mark position to be lost.
 
 Normally, when a new mark is set, the old one should go on the stack.
 This is why most applications should use `push-mark', not `set-mark'.
@@ -4415,9 +4415,10 @@ To remember a location for internal use in the Lisp program,
 store it in a Lisp variable.  Example:
 
    (let ((beg (point))) (forward-line 1) (delete-region beg (point)))."
-
-  (set-marker (mark-marker) pos (current-buffer))
-  (if pos
+  (if (markerp pos-or-marker)
+      (setq mark pos-or-marker)
+    (set-marker (mark-marker) pos-or-marker (current-buffer)))
+  (if pos-or-marker
       (activate-mark 'no-tmm)
     ;; Normally we never clear mark-active except in Transient Mark mode.
     ;; But when we actually clear out the mark value too, we must
@@ -4639,10 +4640,12 @@ purposes.  See the documentation of `set-mark' for more information.
 
 In Transient Mark mode, activate mark if optional third arg ACTIVATE non-nil."
   (unless (null (mark t))
-    (setq mark-ring (cons (copy-marker (mark-marker)) mark-ring))
+    (push (mark-marker) mark-ring)
     (when (> (length mark-ring) mark-ring-max)
-      (move-marker (car (nthcdr mark-ring-max mark-ring)) nil)
+      ;; Remove from mark-ring.  Note that marker may be in
+      ;; global-mark-ring, so don't point it nowhere.
       (setcdr (nthcdr (1- mark-ring-max) mark-ring) nil)))
+  (set-mark (copy-marker (mark-marker)))
   (set-marker (mark-marker) (or location (point)) (current-buffer))
   ;; Now push the mark on the global mark ring.
   (if (and global-mark-ring
@@ -4650,9 +4653,8 @@ In Transient Mark mode, activate mark if optional third arg ACTIVATE non-nil."
       ;; The last global mark pushed was in this same buffer.
       ;; Don't push another one.
       nil
-    (setq global-mark-ring (cons (copy-marker (mark-marker)) global-mark-ring))
+    (push (mark-marker) global-mark-ring)
     (when (> (length global-mark-ring) global-mark-ring-max)
-      (move-marker (car (nthcdr global-mark-ring-max global-mark-ring)) nil)
       (setcdr (nthcdr (1- global-mark-ring-max) global-mark-ring) nil)))
   (or nomsg executing-kbd-macro (> (minibuffer-depth) 0)
       (message "Mark set"))
@@ -4664,11 +4666,9 @@ In Transient Mark mode, activate mark if optional third arg ACTIVATE non-nil."
   "Pop off mark ring into the buffer's actual mark.
 Does not set point.  Does nothing if mark ring is empty."
   (when mark-ring
-    (setq mark-ring (nconc mark-ring (list (copy-marker (mark-marker)))))
-    (set-marker (mark-marker) (+ 0 (car mark-ring)) (current-buffer))
-    (move-marker (car mark-ring) nil)
-    (if (null (mark t)) (ding))
-    (setq mark-ring (cdr mark-ring)))
+    (setq mark-ring (nconc mark-ring (list (mark-marker))))
+    (set-mark (pop mark-ring))
+    (if (null (mark t)) (ding)))
   (deactivate-mark))
 
 (define-obsolete-function-alias

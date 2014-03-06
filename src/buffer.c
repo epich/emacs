@@ -5161,6 +5161,7 @@ init_buffer_once (void)
   bset_abbrev_table (&buffer_defaults, Qnil);
   bset_display_table (&buffer_defaults, Qnil);
   bset_undo_list (&buffer_defaults, Qnil);
+  bset_mark (&buffer_defaults, Qnil);
   bset_mark_active (&buffer_defaults, Qnil);
   bset_file_format (&buffer_defaults, Qnil);
   bset_auto_save_file_format (&buffer_defaults, Qt);
@@ -5219,6 +5220,7 @@ init_buffer_once (void)
   bset_major_mode (&buffer_local_flags, make_number (-1));
   bset_mode_name (&buffer_local_flags, make_number (-1));
   bset_undo_list (&buffer_local_flags, make_number (-1));
+  bset_mark (&buffer_local_flags, make_number (-1));
   bset_mark_active (&buffer_local_flags, make_number (-1));
   bset_point_before_scroll (&buffer_local_flags, make_number (-1));
   bset_file_truename (&buffer_local_flags, make_number (-1));
@@ -6123,6 +6125,9 @@ Entries with value `nil' mark undo boundaries.  The undo command treats
 the changes between two undo boundaries as a single step to be undone.
 
 If the value of the variable is t, undo information is not recorded.  */);
+
+  DEFVAR_PER_BUFFER ("mark", &BVAR (current_buffer, mark), Qnil,
+        	     doc: /* The buffer's mark.  */);
 
   DEFVAR_PER_BUFFER ("mark-active", &BVAR (current_buffer, mark_active), Qnil,
 		     doc: /* Non-nil means the mark and region are currently active in this buffer.  */);
