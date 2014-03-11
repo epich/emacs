@@ -21,13 +21,6 @@
 
 ;;; Code:
 
-;; Brainstorm of tests:
-;; - push, pop, set mark to mark-ring and global-mark-ring
-;; - Functions of interest: marker-position, marker-buffer, mark-marker, set-mark, push-mark, pop-mark, exchange-point-and-mark (test this as a means to test set-mark?), pop-global-mark
-
-;; Push: A in buf1, B in buf1, C in buf2, D in buf1
-;; Pop: global-mark-ring go to C, mark-ring stay at C, global-mark-ring go to D, mark-ring go to B, [push E here], global-mark-ring stay at B, mark-ring go to E, mark-ring go to A
-
 (ert-deftest marker-tests-mark-rings ()
   (let ((buf1 (generate-new-buffer "buf1"))
         (buf2 (generate-new-buffer "buf2")))
