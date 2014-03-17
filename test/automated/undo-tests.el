@@ -268,10 +268,44 @@
     (should (string= (buffer-string)
                      "This sentence corrupted?aaa"))))
 
-(ert-deftest undo-test-mark-adjustment ()
+(ert-deftest undo-test-marker-adjustment-nominal ()
+  "Test nominal behavior of marker adjustments."
+  (with-temp-buffer
+    (buffer-enable-undo)
+    (insert "abcdefg")
+    (undo-boundary)
+    (let ((m (make-marker)))
+      (set-marker m 2 (current-buffer))
+      (goto-char (point-min))
+      (delete-forward-char 3)
+      (undo-boundary)
+      (should (= (point-min) (marker-position m)))
+      (undo)
+      (undo-boundary)
+      (should (= 2 (marker-position m))))))
+
+(ert-deftest undo-test-marker-adjustment-moved ()
+  "Test marker adjustment behavior when the marker moves.
+Demonstrates bug 16818."
+  (with-temp-buffer
+    (buffer-enable-undo)
+    (insert "abcdefghijk")
+    (undo-boundary)
+    (let ((m (make-marker)))
+      (set-marker m 2 (current-buffer)) ; m at b
+      (goto-char (point-min))
+      (delete-forward-char 3) ; m at d
+      (undo-boundary)
+      (set-marker m 4) ; m at g
+      (undo)
+      (undo-boundary)
+      ;; m still at g, but shifted 3 because deletion undone
+      (should (= 7 (marker-position m))))))
+
+(ert-deftest undo-test-region-mark-adjustment ()
   "Test that the mark's marker adjustment in undo history doesn't
-  obstruct undo in region from finding the correct change group.
-  Demonstrates bug 16818."
+obstruct undo in region from finding the correct change group.
+Demonstrates bug 16818."
   (with-temp-buffer
     (buffer-enable-undo)
     (transient-mark-mode 1)
