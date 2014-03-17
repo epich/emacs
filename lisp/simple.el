@@ -2305,7 +2305,8 @@ Return what remains of the list."
                (goto-char pos)))
             ;; (MARKER . OFFSET) means a marker MARKER was adjusted by OFFSET.
             (`(,(and marker (pred markerp)) . ,(and offset (pred integerp)))
-             (when (and (integerp (marker-position marker))
+             (when (and del-pos
+                        (integerp (marker-position marker))
                         (= del-pos marker)
                         (marker-buffer marker))
                (set-marker marker
