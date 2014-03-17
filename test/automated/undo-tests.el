@@ -268,6 +268,46 @@
     (should (string= (buffer-string)
                      "This sentence corrupted?aaa"))))
 
+(ert-deftest undo-test-mark-adjustment ()
+  "Test that the mark's marker adjustment in undo history doesn't
+  obstruct undo in region from finding the correct change group.
+  Demonstrates bug 16818."
+  (with-temp-buffer
+    (buffer-enable-undo)
+    (transient-mark-mode 1)
+    (insert "First line\n")
+    (insert "Second line\n")
+    (undo-boundary)
+
+    (goto-char (point-min))
+    (insert "aaa")
+    (undo-boundary)
+
+    (undo)
+    (undo-boundary)
+
+    (goto-char (point-max))
+    (insert "bbb")
+    (undo-boundary)
+
+    (push-mark (point) t t)
+    (setq mark-active t)
+    (goto-char (- (point) 3))
+    (delete-forward-char 1)
+    (undo-boundary)
+
+    (insert "bbb")
+    (undo-boundary)
+
+    (goto-char (point-min))
+    (push-mark (point) t t)
+    (setq mark-active t)
+    (goto-char (+ (point) 3))
+    (undo)
+    (undo-boundary)
+
+    (should (string= (buffer-string) "aaaFirst line\nSecond line\nbbb"))))
+
 (defun undo-test-all (&optional interactive)
   "Run all tests for \\[undo]."
   (interactive "p")
