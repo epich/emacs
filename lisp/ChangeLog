@@ -1,10 +1,11 @@
 2014-03-13  Barry O'Reilly  <gundaetiapo@gmail.com>
 
 	* simple.el (primitive-undo): When adjusting a marker, check that
-	its position is still valid.
+	its position is still valid.  (Bug#16818)
 	(undo-make-selective-list): Determine whether a marker adjustment
-	is in the region based on whether the deletion that put it in the
-	undo history is in the region.  (Bug#16818)
+	is in the region based on whether the deletion that recorded it in
+	undo history is in the region.  Remove variable adjusted-markers,
+	which was unused and only non nil during undo-make-selective-list.
 	(undo-elt-in-region): New optional argument MARKER-VALIDITY-POS.
 
 2014-03-13  Dmitry Gutov  <dgutov@yandex.ru>
