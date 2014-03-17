@@ -1,3 +1,11 @@
+2014-03-13  Barry O'Reilly  <gundaetiapo@gmail.com>
+
+	* undo-tests.el (undo-test-marker-adjustment-nominal): New test of
+	marker adjustments.
+	(undo-test-marker-adjustment-moved):
+	(undo-test-region-mark-adjustment): Two new test to demonstrate
+	bug#16818.
+
 2014-03-07  Michael Albinus  <michael.albinus@gmx.de>
 
 	* automated/tramp-tests.el (tramp-copy-size-limit): Declare.
