@@ -147,11 +147,78 @@ record_insert (ptrdiff_t beg, ptrdiff_t length)
 		  Fcons (Fcons (lbeg, lend), BVAR (current_buffer, undo_list)));
 }
 
-/* Record that a deletion is about to take place,
-   of the characters in STRING, at location BEG.  */
+/* Record the fact that MARKER is about to be adjusted by ADJUSTMENT.
+   This is done only when a marker points within text being deleted,
+   because that's the only case where an automatic marker adjustment
+   won't be inverted automatically by undoing the buffer modification.  */
+
+static void
+record_marker_adjustments (ptrdiff_t from, ptrdiff_t to)
+{
+  Lisp_Object marker;
+  register struct Lisp_Marker *m;
+  register ptrdiff_t charpos;
+
+  /* Allocate a cons cell to be the undo boundary after this command.  */
+  if (NILP (pending_boundary))
+    pending_boundary = Fcons (Qnil, Qnil);
+
+  if (current_buffer != last_undo_buffer)
+    Fundo_boundary ();
+  last_undo_buffer = current_buffer;
+
+  for (m = BUF_MARKERS (current_buffer); m; m = m->next)
+    {
+      charpos = m->charpos;
+      eassert (charpos <= Z);
+
+      /* Here's the case where a marker is inside text being deleted.  */
+      if (from < charpos && charpos <= to)
+        {
+	  if (! m->insertion_type)
+	    { /* Normal markers will end up at the beginning of the
+	       re-inserted text after undoing a deletion, and must be
+	       adjusted to move them to the correct place.  */
+	      XSETMISC (marker, m);
+              bset_undo_list
+                (current_buffer,
+                 Fcons (Fcons (marker, make_number (from - charpos)),
+                        BVAR (current_buffer, undo_list)));
+	    }
+	  else if (charpos < to)
+	    { /* Before-insertion markers will automatically move forward
+	       upon re-inserting the deleted text, so we have to arrange
+	       for them to move backward to the correct position.  */
+	      XSETMISC (marker, m);
+              bset_undo_list
+                (current_buffer,
+                 Fcons (Fcons (marker, make_number (to - charpos)),
+                        BVAR (current_buffer, undo_list)));
+	    }
+        }
+      /* Here's the case where a before-insertion marker is immediately
+	 before the deleted region.  */
+      else if (charpos == from && m->insertion_type)
+	{
+	  /* Undoing the change uses normal insertion, which will
+	     incorrectly make MARKER move forward, so we arrange for it
+	     to then move backward to the correct place at the beginning
+	     of the deleted region.  */
+	  XSETMISC (marker, m);
+          bset_undo_list
+            (current_buffer,
+             Fcons (Fcons (marker, make_number (to - from)),
+                    BVAR (current_buffer, undo_list)));
+	}
+    }
+}
+
+/* Record that a deletion is about to take place, of the characters in
+   STRING, at location BEG.  Optionally record adjustments for markers
+   in the region STRING occupies in the current buffer.  */
 
 void
-record_delete (ptrdiff_t beg, Lisp_Object string)
+record_delete (ptrdiff_t beg, Lisp_Object string, bool record_markers)
 {
   Lisp_Object sbeg;
 
@@ -169,34 +236,15 @@ record_delete (ptrdiff_t beg, Lisp_Object string)
       record_point (beg);
     }
 
+  /* primitive-undo assumes marker adjustments are recorded
+     immediately before the deletion is recorded.  See bug 16818
+     discussion.  */
+  if (record_markers)
+    record_marker_adjustments (beg, beg + SCHARS (string));
+
   bset_undo_list
     (current_buffer,
      Fcons (Fcons (string, sbeg), BVAR (current_buffer, undo_list)));
-}
-
-/* Record the fact that MARKER is about to be adjusted by ADJUSTMENT.
-   This is done only when a marker points within text being deleted,
-   because that's the only case where an automatic marker adjustment
-   won't be inverted automatically by undoing the buffer modification.  */
-
-void
-record_marker_adjustment (Lisp_Object marker, ptrdiff_t adjustment)
-{
-  if (EQ (BVAR (current_buffer, undo_list), Qt))
-    return;
-
-  /* Allocate a cons cell to be the undo boundary after this command.  */
-  if (NILP (pending_boundary))
-    pending_boundary = Fcons (Qnil, Qnil);
-
-  if (current_buffer != last_undo_buffer)
-    Fundo_boundary ();
-  last_undo_buffer = current_buffer;
-
-  bset_undo_list
-    (current_buffer,
-     Fcons (Fcons (marker, make_number (adjustment)),
-	    BVAR (current_buffer, undo_list)));
 }
 
 /* Record that a replacement is about to take place,
@@ -206,7 +254,7 @@ record_marker_adjustment (Lisp_Object marker, ptrdiff_t adjustment)
 void
 record_change (ptrdiff_t beg, ptrdiff_t length)
 {
-  record_delete (beg, make_buffer_string (beg, beg + length, 1));
+  record_delete (beg, make_buffer_string (beg, beg + length, 1), false);
   record_insert (beg, length);
 }
 
