@@ -2318,7 +2318,7 @@ Return what remains of the list."
                              (marker-buffer (car adj)))))))
           ;; (MARKER . OFFSET) means a marker MARKER was adjusted by OFFSET.
           (`(,(and marker (pred markerp)) . ,(and offset (pred integerp)))
-           (warn "Encountered %S entry in undo list with no corresponding (TEXT . POS) entry"
+           (warn "Encountered %S entry in undo list with no matching (TEXT . POS) entry"
                  next))
           (_ (error "Unrecognized entry in undo list %S" next))))
       (setq arg (1- arg)))
@@ -2362,30 +2362,17 @@ If we find an element that crosses an edge of this region,
 we stop and ignore all further elements."
   (let ((undo-list-copy (undo-copy-list buffer-undo-list))
 	(undo-list (list nil))
-        ;; The position of a deletion record (TEXT . POSITION) of the
-        ;; current change group.
-        ;;
-        ;; This is used to check that marker adjustmenets are in the
-        ;; region.  Bug 16818 describes why the marker's position is
-        ;; not suitable.
-        del-pos
 	some-rejected
 	undo-elt temp-undo-list delta)
     (while undo-list-copy
       (setq undo-elt (car undo-list-copy))
-      ;; Update del-pos
-      (if undo-elt
-          (when (and (consp undo-elt) (stringp (car undo-elt)))
-            (setq del-pos (cdr undo-elt)))
-        ;; Undo boundary means new change group, so unset del-pos
-        (setq del-pos nil))
       (let ((keep-this
 	     (cond ((and (consp undo-elt) (eq (car undo-elt) t))
 		    ;; This is a "was unmodified" element.
 		    ;; Keep it if we have kept everything thus far.
 		    (not some-rejected))
 		   (t
-		    (undo-elt-in-region undo-elt start end del-pos)))))
+		    (undo-elt-in-region undo-elt start end)))))
 	(if keep-this
 	    (progn
 	      (setq end (+ end (cdr (undo-delta undo-elt))))
@@ -2442,9 +2429,11 @@ we stop and ignore all further elements."
   "Determine whether UNDO-ELT falls inside the region START ... END.
 If it crosses the edge, we return nil.
 
-If undo-elt is a (MARKER . ADJUSTMENT) record, either
-MARKER-VALIDITY-POS (if specified) or the marker's position is
-used to determine whether it is in the region."
+Generally this function is not useful for determining
+whether (MARKER . ADJUSTMENT) undo elements are in the region,
+because markers can be arbitrarily relocated. Rather, a marker
+adjustment is in the region if and only if its
+corresponding (TEXT . POS) element is."
   (cond ((integerp undo-elt)
 	 (and (>= undo-elt start)
 	      (<= undo-elt end)))
@@ -2458,7 +2447,8 @@ used to determine whether it is in the region."
 	      (<= (abs (cdr undo-elt)) end)))
 	((and (consp undo-elt) (markerp (car undo-elt)))
 	 ;; (MARKER . ADJUSTMENT)
-         (let ((mpos (or marker-validity-pos (marker-position (car undo-elt)))))
+         ;; Continue handling marker adjustments for 24.4
+         (let ((mpos (marker-position (car undo-elt))))
            (and (integerp mpos) (<= start mpos end))))
 	((null (car undo-elt))
 	 ;; (nil PROPERTY VALUE BEG . END)
