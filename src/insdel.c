@@ -1696,8 +1696,7 @@ del_range_2 (ptrdiff_t from, ptrdiff_t from_byte,
   record_delete (from, deletion, true);
 
   /* Relocate all markers pointing into the new, larger gap to point
-     at the end of the text before the gap.  These are the same
-     markers whose adjustements were just recorded.  */
+     at the end of the text before the gap.  */
   adjust_markers_for_delete (from, from_byte, to, to_byte);
 
   MODIFF++;
