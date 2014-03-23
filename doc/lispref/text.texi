@@ -1270,7 +1270,7 @@ This kind of element indicates how to reinsert text that was deleted.
 The deleted text itself is the string @var{text}.  The place to
 reinsert it is @code{(abs @var{position})}.  If @var{position} is
 positive, point was at the beginning of the deleted text, otherwise it
-was at the end.  Zero or more @var{marker} . @var{adjustment})
+was at the end.  Zero or more (@var{marker} . @var{adjustment})
 elements follow immediately after this element.
 
 @item (t . @var{time-flag})
