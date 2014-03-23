@@ -1691,7 +1691,7 @@ del_range_2 (ptrdiff_t from, ptrdiff_t from_byte,
   else
     deletion = Qnil;
 
-  /* Record point, marker adjustments, and text deletion into undo
+  /* Record marker adjustments, and text deletion into undo
      history.  */
   record_delete (from, deletion, true);
 
