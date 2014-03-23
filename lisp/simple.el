@@ -2425,7 +2425,7 @@ we stop and ignore all further elements."
       (setq undo-list-copy (cdr undo-list-copy)))
     (nreverse undo-list)))
 
-(defun undo-elt-in-region (undo-elt start end &optional marker-validity-pos)
+(defun undo-elt-in-region (undo-elt start end)
   "Determine whether UNDO-ELT falls inside the region START ... END.
 If it crosses the edge, we return nil.
 
