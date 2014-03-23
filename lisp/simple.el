@@ -2312,10 +2312,10 @@ Return what remains of the list."
                (goto-char pos))
              ;; Adjust the valid marker adjustments
              (dolist (adj valid-marker-adjustments)
-               (when (marker-buffer marker)
-                 (set-marker marker
-                             (- marker offset)
-                             (marker-buffer marker))))))
+               (when (marker-buffer (car adj))
+                 (set-marker (car adj)
+                             (- (car adj) (cdr adj))
+                             (marker-buffer (car adj)))))))
           ;; (MARKER . OFFSET) means a marker MARKER was adjusted by OFFSET.
           (`(,(and marker (pred markerp)) . ,(and offset (pred integerp)))
            (warn "Encountered %S entry in undo list with no corresponding (TEXT . POS) entry"
