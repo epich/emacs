@@ -75,27 +75,8 @@ record_point (ptrdiff_t pt)
     Fundo_boundary ();
   last_undo_buffer = current_buffer;
 
-  if (CONSP (BVAR (current_buffer, undo_list)))
-    {
-      /* Set AT_BOUNDARY only when we have nothing other than
-         marker adjustment before undo boundary.  */
-
-      Lisp_Object tail = BVAR (current_buffer, undo_list), elt;
-
-      while (1)
-	{
-	  if (NILP (tail))
-	    elt = Qnil;
-	  else
-	    elt = XCAR (tail);
-	  if (NILP (elt) || ! (CONSP (elt) && MARKERP (XCAR (elt))))
-	    break;
-	  tail = XCDR (tail);
-	}
-      at_boundary = NILP (elt);
-    }
-  else
-    at_boundary = 1;
+  at_boundary = ! CONSP (BVAR (current_buffer, undo_list))
+                || NILP (XCAR (BVAR (current_buffer, undo_list)));
 
   if (MODIFF <= SAVE_MODIFF)
     record_first_change ();
