@@ -1,7 +1,8 @@
 2014-03-13  Barry O'Reilly  <gundaetiapo@gmail.com>
 
-	(MARKER . ADJUSTMENT) undo records to always be immediately after
-	their corresponding (TEXT . POS) record in undo list.  (Bug#16818)
+	Have (MARKER . ADJUSTMENT) undo records always be immediately
+	after their corresponding (TEXT . POS) record in undo list.
+	(Bug#16818)
 	* lisp.h (record-delete): New arg record_markers.
 	(record_marker_adjustment): No longer needed outside undo.c.
 	* insdel.c (adjust_markers_for_delete): Move calculation of marker
