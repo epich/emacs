@@ -2298,8 +2298,9 @@ Return what remains of the list."
              (while (and (consp (car list))
                          (markerp (caar list))
                          (integerp (cdar list)))
-               (and (integerp (marker-position (caar list)))
-                    ;; TODO: validate against current buffer
+               (and (eq (marker-buffer (caar list))
+                        (current-buffer))
+                    (integerp (marker-position (caar list)))
                     (= pos (caar list))
                     (push (car list) valid-marker-adjustments))
                (pop list))
@@ -2313,10 +2314,8 @@ Return what remains of the list."
                (goto-char pos))
              ;; Adjust the valid marker adjustments
              (dolist (adj valid-marker-adjustments)
-               (when (marker-buffer (car adj))
-                 (set-marker (car adj)
-                             (- (car adj) (cdr adj))
-                             (marker-buffer (car adj)))))))
+               (set-marker (car adj)
+                           (- (car adj) (cdr adj))))))
           ;; (MARKER . OFFSET) means a marker MARKER was adjusted by OFFSET.
           (`(,(and marker (pred markerp)) . ,(and offset (pred integerp)))
            (warn "Encountered %S entry in undo list with no matching (TEXT . POS) entry"
@@ -2388,8 +2387,9 @@ we stop and ignore all further elements."
                            (integerp (cdr undo-elt)))
                   (let ((list-i (cdr undo-list-copy)))
                     (while (markerp (caar list-i))
-                      (and (integerp (marker-position (caar list-i)))
-                           ;; TODO: validate against current buffer
+                      (and (eq (marker-buffer (caar list-i))
+                               (current-buffer))
+                           (integerp (marker-position (caar list-i)))
                            (= (cdr undo-elt) (caar list-i))
                            (push (car list-i) undo-list))
                       (pop list-i))))))
