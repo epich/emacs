@@ -138,7 +138,7 @@ record_marker_adjustments (ptrdiff_t from, ptrdiff_t to)
 {
   Lisp_Object marker;
   register struct Lisp_Marker *m;
-  register ptrdiff_t charpos;
+  register ptrdiff_t charpos, adjustment;
 
   /* Allocate a cons cell to be the undo boundary after this command.  */
   if (NILP (pending_boundary))
@@ -152,45 +152,27 @@ record_marker_adjustments (ptrdiff_t from, ptrdiff_t to)
     {
       charpos = m->charpos;
       eassert (charpos <= Z);
+      adjustment = 0;
 
-      /* Here's the case where a marker is inside text being deleted.  */
-      if (from < charpos && charpos <= to)
+      /* Normal markers will end up at the beginning of the
+	re-inserted text after undoing a deletion, and must be
+	adjusted to move them to the correct place.  */
+      if (! m->insertion_type && from < charpos && charpos <= to)
+        adjustment = from - charpos;
+      /* Before-insertion markers will automatically move forward upon
+	re-inserting the deleted text, so we have to arrange for them
+	to move backward to the correct position.  */
+      else if (m->insertion_type && from <= charpos && charpos < to)
+        adjustment = to - charpos;
+
+      if (adjustment)
         {
-	  if (! m->insertion_type)
-	    { /* Normal markers will end up at the beginning of the
-	       re-inserted text after undoing a deletion, and must be
-	       adjusted to move them to the correct place.  */
-	      XSETMISC (marker, m);
-              bset_undo_list
-                (current_buffer,
-                 Fcons (Fcons (marker, make_number (from - charpos)),
-                        BVAR (current_buffer, undo_list)));
-	    }
-	  else if (charpos < to)
-	    { /* Before-insertion markers will automatically move forward
-	       upon re-inserting the deleted text, so we have to arrange
-	       for them to move backward to the correct position.  */
-	      XSETMISC (marker, m);
-              bset_undo_list
-                (current_buffer,
-                 Fcons (Fcons (marker, make_number (to - charpos)),
-                        BVAR (current_buffer, undo_list)));
-	    }
-        }
-      /* Here's the case where a before-insertion marker is immediately
-	 before the deleted region.  */
-      else if (charpos == from && m->insertion_type)
-	{
-	  /* Undoing the change uses normal insertion, which will
-	     incorrectly make MARKER move forward, so we arrange for it
-	     to then move backward to the correct place at the beginning
-	     of the deleted region.  */
-	  XSETMISC (marker, m);
+          XSETMISC (marker, m);
           bset_undo_list
             (current_buffer,
-             Fcons (Fcons (marker, make_number (to - from)),
+             Fcons (Fcons (marker, make_number (adjustment)),
                     BVAR (current_buffer, undo_list)));
-	}
+        }
     }
 }
 
