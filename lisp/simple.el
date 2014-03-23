@@ -2377,9 +2377,21 @@ we stop and ignore all further elements."
 	    (progn
 	      (setq end (+ end (cdr (undo-delta undo-elt))))
 	      ;; Don't put two nils together in the list
-	      (if (not (and (eq (car undo-list) nil)
-			    (eq undo-elt nil)))
-		  (setq undo-list (cons undo-elt undo-list))))
+	      (when (not (and (eq (car undo-list) nil)
+                              (eq undo-elt nil)))
+                (setq undo-list (cons undo-elt undo-list))
+                ;; If (TEXT . POS), "keep" its subsequent (MARKER
+                ;; . ADJUSTMENT) whose markers haven't moved.
+                (when (and (consp undo-elt)
+                           (stringp (car undo-elt))
+                           (integerp (cdr undo-elt)))
+                  (let ((list-i (cdr undo-list-copy)))
+                    (while (markerp (caar list-i))
+                      (let ((mpos (marker-position (caar list-i))))
+                        (and (integerp mpos)
+                             (= (cdr undo-elt) mpos)
+                             (push (car list-i) undo-list)))
+                      (pop list-i))))))
 	  (if (undo-elt-crosses-region undo-elt start end)
 	      (setq undo-list-copy nil)
 	    (setq some-rejected t)
@@ -2431,9 +2443,8 @@ If it crosses the edge, we return nil.
 
 Generally this function is not useful for determining
 whether (MARKER . ADJUSTMENT) undo elements are in the region,
-because markers can be arbitrarily relocated. Rather, a marker
-adjustment is in the region if and only if its
-corresponding (TEXT . POS) element is."
+because markers can be arbitrarily relocated.  Instead, pass the
+marker adjustment's corresponding (TEXT . POS) element."
   (cond ((integerp undo-elt)
 	 (and (>= undo-elt start)
 	      (<= undo-elt end)))
@@ -2447,9 +2458,7 @@ corresponding (TEXT . POS) element is."
 	      (<= (abs (cdr undo-elt)) end)))
 	((and (consp undo-elt) (markerp (car undo-elt)))
 	 ;; (MARKER . ADJUSTMENT)
-         ;; Continue handling marker adjustments for 24.4
-         (let ((mpos (marker-position (car undo-elt))))
-           (and (integerp mpos) (<= start mpos end))))
+         nil)
 	((null (car undo-elt))
 	 ;; (nil PROPERTY VALUE BEG . END)
 	 (let ((tail (nthcdr 3 undo-elt)))
