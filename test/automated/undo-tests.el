@@ -284,6 +284,8 @@
       (undo-boundary)
       (should (= 2 (marker-position m))))))
 
+;; TODO: Test t type marker in region
+
 (ert-deftest undo-test-marker-adjustment-moved ()
   "Test marker adjustment behavior when the marker moves.
 Demonstrates bug 16818."
