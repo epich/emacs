@@ -2299,6 +2299,7 @@ Return what remains of the list."
                          (markerp (caar list))
                          (integerp (cdar list)))
                (and (integerp (marker-position (caar list)))
+                    ;; TODO: validate against current buffer
                     (= pos (caar list))
                     (push (car list) valid-marker-adjustments))
                (pop list))
@@ -2388,6 +2389,7 @@ we stop and ignore all further elements."
                   (let ((list-i (cdr undo-list-copy)))
                     (while (markerp (caar list-i))
                       (and (integerp (marker-position (caar list-i)))
+                           ;; TODO: validate against current buffer
                            (= (cdr undo-elt) (caar list-i))
                            (push (car list-i) undo-list))
                       (pop list-i))))))
