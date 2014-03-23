@@ -284,7 +284,29 @@
       (undo-boundary)
       (should (= 2 (marker-position m))))))
 
-;; TODO: Test t type marker in region
+(ert-deftest undo-test-region-t-marker ()
+  "Test undo in region containing marker with t insertion-type."
+  (with-temp-buffer
+    (buffer-enable-undo)
+    (transient-mark-mode 1)
+    (insert "abcdefg")
+    (undo-boundary)
+    (let ((m (make-marker)))
+      (set-marker-insertion-type m t)
+      (set-marker m (point-min) (current-buffer)) ; m at a
+      (goto-char (+ 2 (point-min)))
+      (push-mark (point) t t)
+      (setq mark-active t)
+      (goto-char (point-min))
+      (delete-forward-char 1) ;; delete region covering "ab"
+      (undo-boundary)
+      (should (= (point-min) (marker-position m)))
+      ;; Resurrect "ab". m's insertion type means the reinsertion
+      ;; moves it forward 2, and then the marker adjustment returns it
+      ;; to its rightful place.
+      (undo)
+      (undo-boundary)
+      (should (= (point-min) (marker-position m))))))
 
 (ert-deftest undo-test-marker-adjustment-moved ()
   "Test marker adjustment behavior when the marker moves.
