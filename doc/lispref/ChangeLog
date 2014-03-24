@@ -1,4 +1,5 @@
 2014-03-13  Barry O'Reilly  <gundaetiapo@gmail.com>
+
 	* markers.texi (Moving Marker Positions): The 2014-03-02 doc
 	change mentioning undo's inability to handle relocated markers no
 	longer applies.  See bug#16818.

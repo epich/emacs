@@ -2295,15 +2295,13 @@ Return what remains of the list."
              ;; the markers haven't moved.  We check their validity
              ;; before reinserting the string so as we don't need to
              ;; mind marker insertion-type.
-             (while (and (consp (car list))
-                         (markerp (caar list))
-                         (integerp (cdar list)))
-               (and (eq (marker-buffer (caar list))
-                        (current-buffer))
-                    (integerp (marker-position (caar list)))
-                    (= pos (caar list))
-                    (push (car list) valid-marker-adjustments))
-               (pop list))
+             (while (and (markerp (car-safe (car list)))
+                         (integerp (cdr-safe (car list))))
+               (let* ((marker-adj (pop list))
+                      (m (car marker-adj)))
+                 (and (eq (marker-buffer m) (current-buffer))
+                      (= pos m)
+                      (push marker-adj valid-marker-adjustments))))
              ;; Insert string and adjust point
              (if (< pos 0)
                  (progn
@@ -2319,7 +2317,13 @@ Return what remains of the list."
           ;; (MARKER . OFFSET) means a marker MARKER was adjusted by OFFSET.
           (`(,(and marker (pred markerp)) . ,(and offset (pred integerp)))
            (warn "Encountered %S entry in undo list with no matching (TEXT . POS) entry"
-                 next))
+                 next)
+           ;; Even though these elements are not expected in the undo
+           ;; list, adjust them to be conservative for the 24.4
+           ;; release.  (Bug#16818)
+           (set-marker marker
+                       (- marker offset)
+                       (marker-buffer marker)))
           (_ (error "Unrecognized entry in undo list %S" next))))
       (setq arg (1- arg)))
     ;; Make sure an apply entry produces at least one undo entry,
@@ -2382,17 +2386,15 @@ we stop and ignore all further elements."
                 (setq undo-list (cons undo-elt undo-list))
                 ;; If (TEXT . POS), "keep" its subsequent (MARKER
                 ;; . ADJUSTMENT) whose markers haven't moved.
-                (when (and (consp undo-elt)
-                           (stringp (car undo-elt))
-                           (integerp (cdr undo-elt)))
+                (when (and (stringp (car-safe undo-elt))
+                           (integerp (cdr-safe undo-elt)))
                   (let ((list-i (cdr undo-list-copy)))
-                    (while (markerp (caar list-i))
-                      (and (eq (marker-buffer (caar list-i))
-                               (current-buffer))
-                           (integerp (marker-position (caar list-i)))
-                           (= (cdr undo-elt) (caar list-i))
-                           (push (car list-i) undo-list))
-                      (pop list-i))))))
+                    (while (markerp (car-safe (car list-i)))
+                      (let* ((adj-elt (pop list-i))
+                             (m (car adj-elt)))
+                        (and (eq (marker-buffer m) (current-buffer))
+                             (= (cdr undo-elt) m)
+                             (push adj-elt undo-list))))))))
 	  (if (undo-elt-crosses-region undo-elt start end)
 	      (setq undo-list-copy nil)
 	    (setq some-rejected t)
