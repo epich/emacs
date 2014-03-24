@@ -2375,6 +2375,10 @@ we stop and ignore all further elements."
 		    ;; This is a "was unmodified" element.
 		    ;; Keep it if we have kept everything thus far.
 		    (not some-rejected))
+                   ;; Skip over marker adjustments, instead relying on
+                   ;; finding them after (TEXT . POS) elements
+                   ((markerp (car-safe undo-elt))
+                    nil)
 		   (t
 		    (undo-elt-in-region undo-elt start end)))))
 	(if keep-this
@@ -2461,7 +2465,7 @@ marker adjustment's corresponding (TEXT . POS) element."
 	      (<= (abs (cdr undo-elt)) end)))
 	((and (consp undo-elt) (markerp (car undo-elt)))
 	 ;; (MARKER . ADJUSTMENT)
-         nil)
+         (<= start (car undo-elt) end))
 	((null (car undo-elt))
 	 ;; (nil PROPERTY VALUE BEG . END)
 	 (let ((tail (nthcdr 3 undo-elt)))
