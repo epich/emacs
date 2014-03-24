@@ -128,10 +128,11 @@ record_insert (ptrdiff_t beg, ptrdiff_t length)
 		  Fcons (Fcons (lbeg, lend), BVAR (current_buffer, undo_list)));
 }
 
-/* Record the fact that MARKER is about to be adjusted by ADJUSTMENT.
-   This is done only when a marker points within text being deleted,
-   because that's the only case where an automatic marker adjustment
-   won't be inverted automatically by undoing the buffer modification.  */
+/* Record the fact that markers in the region of FROM, TO are about to
+   be adjusted.  This is done only when a marker points within text
+   being deleted, because that's the only case where an automatic
+   marker adjustment won't be inverted automatically by undoing the
+   buffer modification.  */
 
 static void
 record_marker_adjustments (ptrdiff_t from, ptrdiff_t to)
@@ -152,26 +153,26 @@ record_marker_adjustments (ptrdiff_t from, ptrdiff_t to)
     {
       charpos = m->charpos;
       eassert (charpos <= Z);
-      adjustment = 0;
 
-      /* Normal markers will end up at the beginning of the
-	re-inserted text after undoing a deletion, and must be
-	adjusted to move them to the correct place.  */
-      if (! m->insertion_type && from < charpos && charpos <= to)
-        adjustment = from - charpos;
-      /* Before-insertion markers will automatically move forward upon
-	re-inserting the deleted text, so we have to arrange for them
-	to move backward to the correct position.  */
-      else if (m->insertion_type && from <= charpos && charpos < to)
-        adjustment = to - charpos;
-
-      if (adjustment)
+      if (from <= charpos && charpos <= to)
         {
-          XSETMISC (marker, m);
-          bset_undo_list
-            (current_buffer,
-             Fcons (Fcons (marker, make_number (adjustment)),
-                    BVAR (current_buffer, undo_list)));
+          /* insertion_type nil markers will end up at the beginning of
+             the re-inserted text after undoing a deletion, and must be
+             adjusted to move them to the correct place.
+
+             insertion_type t markers will automatically move forward
+             upon re-inserting the deleted text, so we have to arrange
+             for them to move backward to the correct position.  */
+          adjustment = (m->insertion_type ? to : from) - charpos;
+
+          if (adjustment)
+            {
+              XSETMISC (marker, m);
+              bset_undo_list
+                (current_buffer,
+                 Fcons (Fcons (marker, make_number (adjustment)),
+                        BVAR (current_buffer, undo_list)));
+            }
         }
     }
 }
