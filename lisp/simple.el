@@ -2360,6 +2360,14 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 	    (undo-make-selective-list (min beg end) (max beg end))
 	  buffer-undo-list)))
 
+(defun undo-make-selective-generator ()
+  ;; TODO document
+  (let ((undo-elt bufer-undo-list)
+        (selective-list nil))
+    (lambda (start end)
+      ;; Find next, incrementing undo-elt, return position adjusted element
+      )))
+
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
 The elements come from `buffer-undo-list', but we keep only
