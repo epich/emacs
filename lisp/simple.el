@@ -2360,9 +2360,126 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 	    (undo-make-selective-list (min beg end) (max beg end))
 	  buffer-undo-list)))
 
+;; TODO: Move to a new undo.el
+(require 'cl-lib)
+
+
+;; The positions given in elements of the undo list are the positions
+;; as of the time that element was recorded to undo history. In
+;; general, subsequent buffer edits render those positions invalid in
+;; the current buffer, unless adjusted.
+;;
+;; When undoing in region, such adjustments are necessary. Consider an
+;; example undo list:
+;;
+;;   ((10 . 15) (20 . 30) ...)
+;;
+;; If the user undoes the region 20 to EOB, then the (10 . 15) text
+;; insertion is outside the region and thus not undone. This means the
+;; (20 . 30) text insertion is really located at position 25 to 35 in
+;; the current buffer and must be processed as though it were (25
+;; . 35).
+;;
+;; To efficiently adjust undo elements, a skip list data structure is
+;; used. An example skip list:
+;;
+;;                                              P4
+;;             E3                               P3                         Y3
+;;    B2       E2    G2       J2       M2       P2          T2       W2    Y2
+;; A1 B1 C1 D1 E1 F1 G1 H1 I1 J1 K1 L1 M1 N1 O1 P1 Q1 R1 S1 T1 U1 V1 W1 X1 Y1 Z1
+;; <-- towards EOB                                               towards BOB -->
+;;
+;; Each letter represents an instance of undo--skip-list-elt, so the
+;; above skip list has N = 26 undo--skip-list-elt. The fields of
+;; undo--skip-list-elt are:
+;;
+;;   pos -- the unadjusted position at which a new adjustment takes
+;;   effect
+;;
+;;   next-elts -- a size N vector of undo--skip-list-elt which are the
+;;   next elements in the linked list of each skip level
+;;
+;;   interval-sums -- a size N vector of sums of adjustments over the
+;;   next skip interval
+;;
+;; Taking E as an example undo--skip-list-elt, some possible values
+;; might be:
+;;
+;;   pos = 100
+;;   next-elts = [F1 G2 P3]
+;;   interval-sum = [9 18 99]
+;;
+;; The interpretation of this would be: "If we undo the next element, we must first adjust it by
+
+;; TODO: Using N for the vector size is confusing given a skip list
+;; element is called N.
+
+;; Undo list:
+;; (50 . 55) inserted 11111
+;; (53 . 63) inserted 2222222222
+;; ("ZZZ".  52) ---or--- ("YYY" . 54)
+;;
+;; 0 ago buffer:
+;; aaa11111bbb2222222222ccc
+;;    |                 |
+;;    50                68
+;;
+;; 1 ago buffer:
+;; aaabbb2222222222ccc
+;;    |            |
+;;    50           63
+;;
+;; 2 ago buffer:
+;; aaabbbccc
+;;    |  |
+;;    50 53
+;;
+;;
+;; Let's say user wants to bring deletion back with undo in
+;; region. Necessary adjustment:
+;;
+;;   ("ZZZ" . 52) must be adjusted to ("ZZZ" . 57)
+;;   ("YYY" . 54) must be adjusted to ("YYY" . 69)
+;;
+;; --- Swap two undo records
+;;
+;; Undo list:
+;; (58 . 68) inserted 2222222222
+;; (50 . 55) inserted 11111
+;; ("ZZZ".  52) ---or--- ("YYY" . 54)
+;;
+;; 0 ago buffer:
+;; aaa11111bbb2222222222ccc
+;;    |                 |
+;;    50                68
+;;
+;; 1 ago buffer:
+;; aaa11111bbbccc
+;;    |       |
+;;    50      58
+;;
+;; 2 ago buffer:
+;; aaabbbccc
+;;    |  |
+;;    50 53
+;;
+;; 3 ago buffer:  ---or--- 3 ago buffer:
+;; aaabbZZZbccc            aaabbbcYYYcc
+;;    |     |                 |  |
+;;    50    56                50 53
+;;
+;;   ("ZZZ" . 52) must be adjusted to ("ZZZ" . 57)
+;;   ("YYY" . 54) must be adjusted to ("YYY" . 69)
+
+
+
+
+
+(cl-defstruct undo--skip-list-elt pos next-elts interval-sums)
+
 (defun undo-make-selective-generator ()
   ;; TODO document
-  (let ((undo-elt bufer-undo-list)
+  (let ((undo-elt buffer-undo-list)
         (selective-list nil))
     (lambda (start end)
       ;; Find next, incrementing undo-elt, return position adjusted element
