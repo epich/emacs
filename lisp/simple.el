@@ -2361,8 +2361,6 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 	  buffer-undo-list)))
 
 ;; TODO: Move to a new undo.el
-(require 'cl-lib)
-
 
 ;; The positions given in elements of the undo list are the positions
 ;; as of the time that element was recorded to undo history. In
@@ -2475,7 +2473,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 
 
 
-(cl-defstruct undo--skip-list-elt pos next-elts interval-sums)
+;;(cl-defstruct undo--skip-list-elt pos next-elts interval-sums)
 
 (defun undo-make-selective-generator ()
   ;; TODO document
