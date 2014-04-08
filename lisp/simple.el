@@ -2470,18 +2470,71 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;;   ("YYY" . 54) must be adjusted to ("YYY" . 69)
 
 
-
-
-
-;;(cl-defstruct undo--skip-list-elt pos next-elts interval-sums)
-
-(defun undo-make-selective-generator ()
+(defun undo-make-change-group-generator (start end)
   ;; TODO document
-  (let ((undo-elt buffer-undo-list)
-        (selective-list nil))
-    (lambda (start end)
-      ;; Find next, incrementing undo-elt, return position adjusted element
-      )))
+  (let (;; Cons of buffer-undo-list for where the generator left off
+        (ulist buffer-undo-list)
+        ;; A list of position adjusted undo elements of successive
+        ;; change groups of buffer-undo-list
+        selective-list
+        ;; A history list of undo-deltas for unapplied undo elements.
+        ;; Undo elements further back in history require position
+        ;; adjustments because of the unapplied elements.
+        undo-deltas)
+    (lambda ()
+      (setq selective-list nil)
+      (when (null (car ulist))
+        (push selective-list (pop ulist)))
+      (while (car ulist)
+        (let* ((undo-elt (car ulist))
+               ;; nil means skip over, assuming doing so does not
+               ;; affect positions.
+               (adjusted-undo-elt
+                (cond ((and (consp undo-elt) (eq (car undo-elt) t))
+                       ;; This is a "was unmodified" element.
+                       ;; Keep it if we have kept everything thus far.
+                       (and (not undo-deltas) undo-elt))
+                      ;; Skip over marker adjustments, instead relying on
+                      ;; finding them after (TEXT . POS) elements
+                      ((markerp (car-safe undo-elt))
+                       nil)
+                      (t
+                       ;; TODO: New function or inline?
+                       (undo-adjust-elt undo-elt undo-deltas)))))
+          (if (and adjusted-undo-elt
+                   (undo-elt-in-region adjusted-undo-elt start end))
+              (progn
+                (push adjusted-undo-elt selective-list)
+                ;; If (TEXT . POS), "keep" its subsequent (MARKER
+                ;; . ADJUSTMENT) whose markers haven't moved.  Note:
+                ;; two different senses of "adjustment".
+                (when (and (stringp (car-safe adjusted-undo-elt))
+                           (integerp (cdr-safe adjusted-undo-elt)))
+                  (let ((list-i (cdr ulist)))
+                    ;; TODO: Need to adjust adj-elt
+                    (while (markerp (car-safe (car list-i)))
+                      (let* ((adj-elt (pop list-i))
+                             (m (car adj-elt)))
+                        (and (eq (marker-buffer m) (current-buffer))
+                             (= (cdr adjusted-undo-elt) m)
+                             (push adj-elt selective-list)))))))
+            (let ((delta (undo-delta undo-elt)))
+              (when (/= 0 (cdr delta))
+                (push (undo-delta undo-elt) undo-deltas)))))
+        (pop ulist))
+      (nreverse selective-list))))
+
+;; TODO: Benchmark with defsubst
+(defun undo-adjust-elt (elt deltas)
+  ;; TODO: Document
+  )
+
+;; TODO: Benchmark with defsubst
+(defun undo-adjust-pos (pos deltas)
+  ;; TODO: Document
+  (dolist (d deltas pos)
+    (when (<= (car d) pos)
+      (setq pos (+ pos (cdr d))))))
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
