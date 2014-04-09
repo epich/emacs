@@ -2527,12 +2527,18 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; TODO: Benchmark with defsubst
 (defun undo-adjust-elt (elt deltas)
   ;; TODO: Document
+  ;;
+  ;; TODO: Check that for (BEG . END) the distance between BEG and END
+  ;; is the same after adjustment. eg YYY then XXXYYY, then insert ZZ
+  ;; to get XXZZXYYY, then delete XY to get XXZZYY, then undo in
+  ;; region over first three chars
   )
 
 ;; TODO: Benchmark with defsubst
 (defun undo-adjust-pos (pos deltas)
   ;; TODO: Document
   (dolist (d deltas pos)
+    ;; TODO: The END position of a (BEG . END) needs to use < instead of <=
     (when (<= (car d) pos)
       (setq pos (+ pos (cdr d))))))
 
