@@ -2469,6 +2469,91 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;;   ("ZZZ" . 52) must be adjusted to ("ZZZ" . 57)
 ;;   ("YYY" . 54) must be adjusted to ("YYY" . 69)
 
+;; Consider (undo elements in () and undo-deltas in []):
+
+;; 123456789
+;; ---------
+;; aaa       (1 . 4)
+;; aada      (3 . 4)    [3 1]
+;; aabbda    (3 . 5)    [3 2]
+;; aabbdccca (6 . 9)    [6 3]
+;; aabbdccc  ("a" . 9)  [9 -1]
+;; |    | region: "aabbd", from 1 to 6
+;;
+;; Undo in region three times:
+;;
+;; 123456789
+;; ---------
+;; aadccc    ("bb" . 3) [3 -2]
+;; |  |
+;; aaccc     ("d" . 3)  [3 -1]
+;; | |
+;; [no more elements in region]
+;;
+;; The end of the "aaa" insertion, after adjusting through the
+;; undo-deltas, is at 6. Consequently, it is not in the region, which
+;; itself adjusted to end at position 3.
+
+;;
+;; aaa      (1 . 4)
+;; aabba    (3 . 5)    [3 2]
+;; aabbccca (5 . 8)    [5 3]
+;; aabbccc  ("a" . 8)  [8 -1]
+;;
+;; Select "aabb" and undo in region twice
+;;
+;; First yields:
+;; aaccc    ("bb" . 3) [3 -2]
+;;
+;; [Paragraph has some incorrectness.]
+;; Second ought to not find an element to undo, because the "aaa"
+;; insertion is out of the region. Specifically, the end part of it is
+;; after "ccc". The 4 of "aaa" insertion must be adjusted by
+;; undo-deltas of all in order to correctly adjust to 6. To correct
+;; for the ones that were undone, such as ("bb" . 3), their new
+;; undo-deltas must be applied, <3 -2> in this case.
+
+;; TODO: Account for edge case:
+;;
+;; 123456789
+;; ---------
+;; yyy       (1 . 4)
+;; xxxyyy    (1 . 4)    ?
+;; xxzzxyyy  (3 . 5)    [3 2]
+;; xxzzyy    ("xy" . 5) [5 -2]
+;; |  | region: "xxz", from 1 to 4
+;;
+;; "xxx" insertion element should: (1 . 4) -> (1 . 6) -> (1 . 5)
+;;
+;; Getting (1 . 5) instead of (1 . 4) requires handling the edge
+;; case of applying [5 -2] to (1 . 6).
+;;
+;; But consider if we undid the deletion before the undo in region:
+;;
+;; 123456789
+;; ---------
+;; yyy       (1 . 4)
+;; xxxyyy    (1 . 4)    ?
+;; xxzzxyyy  (3 . 5)    [3 2]
+;; xxzzyy    ("xy" . 5) [5 -2]
+;; xxzzxyyy  (5 . 7)    [5 2]
+;; |  | region: "xxz", from 1 to 4
+;;
+;; The undo system can't tell if the reinsertion of "xy" is an undo of
+;; the delete or new text. So it can't decide if [5 2] should adjust
+;; forward 2 or 1 (to counter balance the edge case's -1). It could
+;; only heuristically disambiguate if it looked at the text which (5
+;; . 7) inserted, but that would require reconstructing it.
+;;
+;; Normally the undo system uses marker adjustments to solve the
+;; analogous problem of deleting text with markers in the
+;; middle. There are no markers for positions being adjusted however.
+;;
+;; Maybe nothing flagrantly wrong happens if "xy" is regarded as new
+;; text. It sounds like a recipe for trouble since it thinks there's a
+;; ghost of "x" in the wrong place. But I think the undo system would
+;; only resurrect it if it resurrected the problematic elements too,
+;; in which case their undo-deltas don't apply.
 
 (defun undo-make-change-group-generator (start end)
   ;; TODO document
@@ -2502,6 +2587,9 @@ are ignored.  If BEG and END are nil, all undo elements are used."
                        ;; TODO: New function or inline?
                        (undo-adjust-elt undo-elt undo-deltas)))))
           (if (and adjusted-undo-elt
+                   ;; TODO: Need to adjust end for each undo that will
+                   ;; be processed, just as undo-make-selective-list
+                   ;; does.
                    (undo-elt-in-region adjusted-undo-elt start end))
               (progn
                 (push adjusted-undo-elt selective-list)
