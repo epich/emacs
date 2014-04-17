@@ -2584,7 +2584,6 @@ are ignored.  If BEG and END are nil, all undo elements are used."
                       ((markerp (car-safe undo-elt))
                        nil)
                       (t
-                       ;; TODO: New function or inline?
                        (undo-adjust-elt undo-elt undo-deltas)))))
           (if (and adjusted-undo-elt
                    ;; TODO: Need to adjust end for each undo that will
@@ -2615,19 +2614,33 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; TODO: Benchmark with defsubst
 (defun undo-adjust-elt (elt deltas)
   ;; TODO: Document
-  ;;
-  ;; TODO: Check that for (BEG . END) the distance between BEG and END
-  ;; is the same after adjustment. eg YYY then XXXYYY, then insert ZZ
-  ;; to get XXZZXYYY, then delete XY to get XXZZYY, then undo in
-  ;; region over first three chars
-  )
+  (pcase elt
+    ;; POSITION
+    ((pred integerp)
+     (undo-adjust-pos elt deltas))
+    ;; (BEG . END)
+    (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
+     (cons (undo-adjust-pos beg deltas)
+           (undo-adjust-pos end deltas t)))
+    ;; (TEXT . POSITION)
+    (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
+     ;; TODO: Document use of max
+     (cons text (max pos (undo-adjust-pos pos deltas))))
+    ;; (nil PROPERTY VALUE BEG . END)
+    (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
+     `(nil ,prop ,(undo-adjust-pos beg) . ,(undo-adjust-pos end t)))
+    ;; (apply DELTA START END FUN . ARGS)
+    ;; FIXME: (Prior undo in region code didn't implement this.)
+    ))
 
 ;; TODO: Benchmark with defsubst
-(defun undo-adjust-pos (pos deltas)
-  ;; TODO: Document
+(defun undo-adjust-pos (pos deltas &optional use-<)
+  "Adjust POS by the DELTAS list of undo-deltas, comparing with <
+or <= based on USE-<."
   (dolist (d deltas pos)
-    ;; TODO: The END position of a (BEG . END) needs to use < instead of <=
-    (when (<= (car d) pos)
+    (when (if use-<
+              (< (car d) pos)
+            (<= (car d) pos))
       (setq pos (+ pos (cdr d))))))
 
 (defun undo-make-selective-list (start end)
