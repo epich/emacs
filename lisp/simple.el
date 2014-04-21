@@ -2513,7 +2513,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; for the ones that were undone, such as ("bb" . 3), their new
 ;; undo-deltas must be applied, <3 -2> in this case.
 
-;; TODO: Account for edge case:
+;; Accounts for edge case:
 ;;
 ;; 123456789
 ;; ---------
@@ -2569,7 +2569,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
     (lambda ()
       (setq selective-list nil)
       (when (null (car ulist))
-        (push selective-list (pop ulist)))
+        (push (pop ulist) selective-list))
       (while (car ulist)
         (let* ((undo-elt (car ulist))
                ;; nil means skip over, assuming doing so does not
@@ -2586,28 +2586,20 @@ are ignored.  If BEG and END are nil, all undo elements are used."
                       (t
                        (undo-adjust-elt undo-elt undo-deltas)))))
           (if (and adjusted-undo-elt
-                   ;; TODO: Need to adjust end for each undo that will
-                   ;; be processed, just as undo-make-selective-list
-                   ;; does.
                    (undo-elt-in-region adjusted-undo-elt start end))
               (progn
+                (setq end (+ end (cdr (undo-delta adjusted-undo-elt))))
                 (push adjusted-undo-elt selective-list)
-                ;; If (TEXT . POS), "keep" its subsequent (MARKER
-                ;; . ADJUSTMENT) whose markers haven't moved.  Note:
-                ;; two different senses of "adjustment".
+                ;; Keep (MARKER . ADJUSTMENT) if their (TEXT . POS)
+                ;; was kept. primitive-undo may discard them later.
                 (when (and (stringp (car-safe adjusted-undo-elt))
                            (integerp (cdr-safe adjusted-undo-elt)))
                   (let ((list-i (cdr ulist)))
-                    ;; TODO: Need to adjust adj-elt
                     (while (markerp (car-safe (car list-i)))
-                      (let* ((adj-elt (pop list-i))
-                             (m (car adj-elt)))
-                        (and (eq (marker-buffer m) (current-buffer))
-                             (= (cdr adjusted-undo-elt) m)
-                             (push adj-elt selective-list)))))))
+                      (push (pop list-i) selective-list)))))
             (let ((delta (undo-delta undo-elt)))
               (when (/= 0 (cdr delta))
-                (push (undo-delta undo-elt) undo-deltas)))))
+                (push delta undo-deltas)))))
         (pop ulist))
       (nreverse selective-list))))
 
@@ -2624,7 +2616,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
            (undo-adjust-pos end deltas t)))
     ;; (TEXT . POSITION)
     (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
-     ;; TODO: Document use of max
+     ;; TODO: Document use of max for edge case
      (cons text (max pos (undo-adjust-pos pos deltas))))
     ;; (nil PROPERTY VALUE BEG . END)
     (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
