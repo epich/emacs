@@ -2629,7 +2629,6 @@ are ignored.  If BEG and END are nil, all undo elements are used."
            (push nil selective-list))
       selective-list)))
 
-;; TODO: Benchmark with defsubst
 (defun undo-adjust-elt (elt deltas)
   ;; TODO: Document
   (pcase elt
@@ -2651,7 +2650,6 @@ are ignored.  If BEG and END are nil, all undo elements are used."
     ;; FIXME: (Prior undo in region code didn't implement this.)
     ))
 
-;; TODO: Benchmark with defsubst
 (defun undo-adjust-pos (pos deltas &optional use-<)
   "Adjust POS by the DELTAS list of undo-deltas, comparing with <
 or <= based on USE-<."
