@@ -2357,7 +2357,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
       (user-error "No undo information in this buffer"))
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
-	    (undo-make-selective-list (min beg end) (max beg end))
+	    (undo--make-selective-list (min beg end) (max beg end))
 	  buffer-undo-list)))
 
 ;; TODO: Move to a new undo.el
@@ -2555,6 +2555,17 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; only resurrect it if it resurrected the problematic elements too,
 ;; in which case their undo-deltas don't apply.
 
+;; TODO: temporary function with the same interface guarantees as
+;; undo-make-selective-list, but to debug new code
+(defun undo--make-selective-list (start end)
+  (let ((change-group)
+        (change-groups nil)
+        (gen-func (undo-make-change-group-generator start end)))
+    (while (setq change-group (funcall gen-func))
+      (push change-group change-groups))
+    (nreverse change-groups)
+    (nconc change-groups)))
+
 (defun undo-make-change-group-generator (start end)
   ;; TODO document
   (let (;; Cons of buffer-undo-list for where the generator left off
@@ -2568,7 +2579,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
         undo-deltas)
     (lambda ()
       (setq selective-list nil)
-      (when (null (car ulist))
+      (when (and ulist (null (car ulist)))
         (push (pop ulist) selective-list))
       (while (car ulist)
         (let* ((undo-elt (car ulist))
