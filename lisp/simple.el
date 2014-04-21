@@ -2358,11 +2358,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
 	    (undo--make-selective-list (min beg end) (max beg end))
-	  buffer-undo-list))
-  ;; TODO: tmp:
-  (when (not (eq pending-undo-list buffer-undo-list))
-    (let ((cur-time (current-time))) (message "%s.%s DEBUG: pending-undo-list=%s" (format-time-string "%Y-%m-%dT%H:%M:%S" cur-time) (format "%06d" (nth 2 cur-time))
-                                              pending-undo-list))))
+	  buffer-undo-list)))
 
 ;; TODO: Move to a new undo.el
 
@@ -2559,15 +2555,18 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; only resurrect it if it resurrected the problematic elements too,
 ;; in which case their undo-deltas don't apply.
 
-;; TODO: temporary function with the same interface guarantees as
-;; undo-make-selective-list, but to debug new code
+;; TODO: Tests:
+;;   - Find undo elt near end of history
+;;   - Edge case of undo-delta for deletion elt
+;;   - Test case from bug report that failed with old code
+
+;; TODO: Temporary function. This has the same interface guarantees as
+;; undo-make-selective-list, except now there is no superfluous nil at
+;; the end of undo list.
 (defun undo--make-selective-list (start end)
   (let ((change-group)
         (change-groups nil)
         (gen-func (undo-make-change-group-generator start end)))
-    ;; TODO: tmp
-    (let ((cur-time (current-time))) (message "%s.%s DEBUG: start=%s end=%s buffer-undo-list=%s" (format-time-string "%Y-%m-%dT%H:%M:%S" cur-time) (format "%06d" (nth 2 cur-time))
-                                              start end buffer-undo-list))
     (while (setq change-group (funcall gen-func))
       (push change-group change-groups))
     (setq change-groups (nreverse change-groups))
@@ -2588,7 +2587,11 @@ are ignored.  If BEG and END are nil, all undo elements are used."
       (setq selective-list nil)
       (when (null (car ulist))
         (pop ulist))
-      (while (car ulist)
+      (while (or ;; Middle of change group
+                 (car ulist)
+                 ;; No change group for selective-list yet
+                 (and ulist
+                      (null selective-list)))
         (let* ((undo-elt (car ulist))
                ;; nil means skip over, assuming doing so does not
                ;; affect positions.
