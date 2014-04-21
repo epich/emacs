@@ -2358,7 +2358,11 @@ are ignored.  If BEG and END are nil, all undo elements are used."
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
 	    (undo--make-selective-list (min beg end) (max beg end))
-	  buffer-undo-list)))
+	  buffer-undo-list))
+  ;; TODO: tmp:
+  (when (not (eq pending-undo-list buffer-undo-list))
+    (let ((cur-time (current-time))) (message "%s.%s DEBUG: pending-undo-list=%s" (format-time-string "%Y-%m-%dT%H:%M:%S" cur-time) (format "%06d" (nth 2 cur-time))
+                                              pending-undo-list))))
 
 ;; TODO: Move to a new undo.el
 
@@ -2561,10 +2565,13 @@ are ignored.  If BEG and END are nil, all undo elements are used."
   (let ((change-group)
         (change-groups nil)
         (gen-func (undo-make-change-group-generator start end)))
+    ;; TODO: tmp
+    (let ((cur-time (current-time))) (message "%s.%s DEBUG: start=%s end=%s buffer-undo-list=%s" (format-time-string "%Y-%m-%dT%H:%M:%S" cur-time) (format "%06d" (nth 2 cur-time))
+                                              start end buffer-undo-list))
     (while (setq change-group (funcall gen-func))
       (push change-group change-groups))
-    (nreverse change-groups)
-    (nconc change-groups)))
+    (setq change-groups (nreverse change-groups))
+    (apply 'nconc change-groups)))
 
 (defun undo-make-change-group-generator (start end)
   ;; TODO document
@@ -2579,8 +2586,8 @@ are ignored.  If BEG and END are nil, all undo elements are used."
         undo-deltas)
     (lambda ()
       (setq selective-list nil)
-      (when (and ulist (null (car ulist)))
-        (push (pop ulist) selective-list))
+      (when (null (car ulist))
+        (pop ulist))
       (while (car ulist)
         (let* ((undo-elt (car ulist))
                ;; nil means skip over, assuming doing so does not
@@ -2612,7 +2619,12 @@ are ignored.  If BEG and END are nil, all undo elements are used."
               (when (/= 0 (cdr delta))
                 (push delta undo-deltas)))))
         (pop ulist))
-      (nreverse selective-list))))
+      (setq selective-list (nreverse selective-list))
+      ;; Ensure there's a leading undo boundary
+      (and selective-list
+           (car selective-list)
+           (push nil selective-list))
+      selective-list)))
 
 ;; TODO: Benchmark with defsubst
 (defun undo-adjust-elt (elt deltas)
@@ -2747,6 +2759,9 @@ marker adjustment's corresponding (TEXT . POS) element."
 	 t)
 	((atom undo-elt)
 	 nil)
+        ;; (t . TIME)
+        ((and (consp undo-elt) (eq (car undo-elt) t))
+         t)
 	((stringp (car undo-elt))
 	 ;; (TEXT . POSITION)
 	 (and (>= (abs (cdr undo-elt)) start)
