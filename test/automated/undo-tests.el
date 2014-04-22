@@ -226,7 +226,7 @@
             (should-not (buffer-modified-p))))
       (delete-file tempfile))))
 
-(ert-deftest undo-test-in-region-not-most-recent ()
+(ert-deftest undo-test-region-not-most-recent ()
   "Test undo in region of an edit not the most recent."
   (with-temp-buffer
     (buffer-enable-undo)
@@ -247,7 +247,7 @@
     (should (string= (buffer-string)
                      "11131"))))
 
-(ert-deftest undo-test-in-region-deletion ()
+(ert-deftest undo-test-region-deletion ()
   "Test undoing a deletion to demonstrate bug 17235."
   (with-temp-buffer
     (buffer-enable-undo)
@@ -271,7 +271,46 @@
     (should (string= (buffer-string)
                      "xxxxyy12345"))))
 
-(ert-deftest undo-test-in-region-eob ()
+(ert-deftest undo-test-region-example ()
+  "The same example test case described in comments for
+undo-make-selective-list."
+  ;; buf pos:
+  ;; 123456789 buffer-undo-list  undo-deltas
+  ;; --------- ----------------  -----------
+  ;; aaa       (1 . 4)           (1 . -3)
+  ;; aaba      (3 . 4)           N/A (in region)
+  ;; ccaaba    (1 . 3)           (1 . -2)
+  ;; ccaabaddd (7 . 10)          (7 . -3)
+  ;; ccaabdd   ("ad" . 6)        (6 . 2)
+  ;; ccaabaddd (6 . 8)           (6 . -2)
+  ;;  |   |<-- region: "caab", from 2 to 6
+  (with-temp-buffer
+    (buffer-enable-undo)
+    (transient-mark-mode 1)
+    (insert "aaa")
+    (goto-char 3)
+    (undo-boundary)
+    (insert "b")
+    (goto-char 1)
+    (undo-boundary)
+    (insert "cc")
+    (goto-char 7)
+    (undo-boundary)
+    (insert "ddd")
+    (search-backward "ad")
+    (undo-boundary)
+    (delete-forward-char 2)
+    (undo-boundary)
+    (insert "ad")
+    (undo-boundary)
+    (push-mark 2 t t)
+    (setq mark-active t)
+    (search-backward "ad")
+    (undo)
+    (should (string= (buffer-string)
+                     "ccaaaddd"))))
+
+(ert-deftest undo-test-region-eob ()
   "Test undo in region of a deletion at EOB, demonstrating bug 16411."
   (with-temp-buffer
     (buffer-enable-undo)

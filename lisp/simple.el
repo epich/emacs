@@ -2360,208 +2360,64 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 	    (undo--make-selective-list (min beg end) (max beg end))
 	  buffer-undo-list)))
 
-;; TODO: Move to a new undo.el
-
 ;; The positions given in elements of the undo list are the positions
 ;; as of the time that element was recorded to undo history. In
 ;; general, subsequent buffer edits render those positions invalid in
-;; the current buffer, unless adjusted.
+;; the current buffer, unless adjusted according to the intervening
+;; undo elements.
 ;;
-;; When undoing in region, such adjustments are necessary. Consider an
-;; example undo list:
+;; Undo in region is a use case that requires adjustments to undo
+;; elements. It must adjust positions of elements in the region based
+;; on newer elements not in the region so as they are correctly
+;; applied in the current buffer. undo-make-selective-list
+;; accomplishes this with its undo-deltas list of adjustments. An
+;; example undo history from oldest to newest:
 ;;
-;;   ((10 . 15) (20 . 30) ...)
+;; buf pos:
+;; 123456789 buffer-undo-list  undo-deltas
+;; --------- ----------------  -----------
+;; aaa       (1 . 4)           (1 . -3)
+;; aaba      (3 . 4)           N/A (in region)
+;; ccaaba    (1 . 3)           (1 . -2)
+;; ccaabaddd (7 . 10)          (7 . -3)
+;; ccaabdd   ("ad" . 6)        (6 . 2)
+;; ccaabaddd (6 . 8)           (6 . -2)
+;;  |   |<-- region: "caab", from 2 to 6
 ;;
-;; If the user undoes the region 20 to EOB, then the (10 . 15) text
-;; insertion is outside the region and thus not undone. This means the
-;; (20 . 30) text insertion is really located at position 25 to 35 in
-;; the current buffer and must be processed as though it were (25
-;; . 35).
+;; When the user starts a run of undos in region,
+;; undo-make-selective-list is called to create the full list of in
+;; region elements. Each element is adjusted forward chronologically
+;; through undo-deltas to determine if it is in the region.
 ;;
-;; To efficiently adjust undo elements, a skip list data structure is
-;; used. An example skip list:
+;; In the above example, the insertion of "b" is (3 . 4) in the
+;; buffer-undo-list. The undo-delta (1 . -2) causes (3 . 4) to become
+;; (5 . 6). The next three undo-deltas cause no adjustment, so (5 . 6)
+;; is assessed as in the region and placed in the selective
+;; list. Notably, the end of region adjusts from "2 to 6" to "2 to 5"
+;; due to the selected element. The "b" insertion is the only element
+;; fully in the region, so in this example undo-make-selective-list
+;; returns (nil (5 . 6)).
 ;;
-;;                                              P4
-;;             E3                               P3                         Y3
-;;    B2       E2    G2       J2       M2       P2          T2       W2    Y2
-;; A1 B1 C1 D1 E1 F1 G1 H1 I1 J1 K1 L1 M1 N1 O1 P1 Q1 R1 S1 T1 U1 V1 W1 X1 Y1 Z1
-;; <-- towards EOB                                               towards BOB -->
+;; The adjustment of the (7 . 10) insertion of "ddd" shows an edge
+;; case. Normally an undo-delta of (6 . 2) would cause element (A . B)
+;; to adjust to ((- A 2) . (- B 2)). However, A can't be less than 6,
+;; so in this case the (7 . 10) element adjusts to (6 . 8) due to the
+;; (6 . 2) undo-delta.
 ;;
-;; Each letter represents an instance of undo--skip-list-elt, so the
-;; above skip list has N = 26 undo--skip-list-elt. The fields of
-;; undo--skip-list-elt are:
+;; More interesting is how to adjust the "ddd" insertion due to the
+;; next undo-delta: (6 . -2). If the reinsertion of "ad" was an undo,
+;; it is most logical that the "ddd" insertion would adjust by (7
+;; . 10) -> (6 . 8) -> (7 . 10). However, if the reinsertion was a
+;; normal user edit, then most logical is: (7 . 10) -> (6 . 8) -> (8
+;; . 10). The undo history is ambiguous about which.
 ;;
-;;   pos -- the unadjusted position at which a new adjustment takes
-;;   effect
-;;
-;;   next-elts -- a size N vector of undo--skip-list-elt which are the
-;;   next elements in the linked list of each skip level
-;;
-;;   interval-sums -- a size N vector of sums of adjustments over the
-;;   next skip interval
-;;
-;; Taking E as an example undo--skip-list-elt, some possible values
-;; might be:
-;;
-;;   pos = 100
-;;   next-elts = [F1 G2 P3]
-;;   interval-sum = [9 18 99]
-;;
-;; The interpretation of this would be: "If we undo the next element, we must first adjust it by
-
-;; TODO: Using N for the vector size is confusing given a skip list
-;; element is called N.
-
-;; Undo list:
-;; (50 . 55) inserted 11111
-;; (53 . 63) inserted 2222222222
-;; ("ZZZ".  52) ---or--- ("YYY" . 54)
-;;
-;; 0 ago buffer:
-;; aaa11111bbb2222222222ccc
-;;    |                 |
-;;    50                68
-;;
-;; 1 ago buffer:
-;; aaabbb2222222222ccc
-;;    |            |
-;;    50           63
-;;
-;; 2 ago buffer:
-;; aaabbbccc
-;;    |  |
-;;    50 53
-;;
-;;
-;; Let's say user wants to bring deletion back with undo in
-;; region. Necessary adjustment:
-;;
-;;   ("ZZZ" . 52) must be adjusted to ("ZZZ" . 57)
-;;   ("YYY" . 54) must be adjusted to ("YYY" . 69)
-;;
-;; --- Swap two undo records
-;;
-;; Undo list:
-;; (58 . 68) inserted 2222222222
-;; (50 . 55) inserted 11111
-;; ("ZZZ".  52) ---or--- ("YYY" . 54)
-;;
-;; 0 ago buffer:
-;; aaa11111bbb2222222222ccc
-;;    |                 |
-;;    50                68
-;;
-;; 1 ago buffer:
-;; aaa11111bbbccc
-;;    |       |
-;;    50      58
-;;
-;; 2 ago buffer:
-;; aaabbbccc
-;;    |  |
-;;    50 53
-;;
-;; 3 ago buffer:  ---or--- 3 ago buffer:
-;; aaabbZZZbccc            aaabbbcYYYcc
-;;    |     |                 |  |
-;;    50    56                50 53
-;;
-;;   ("ZZZ" . 52) must be adjusted to ("ZZZ" . 57)
-;;   ("YYY" . 54) must be adjusted to ("YYY" . 69)
-
-;; Consider (undo elements in () and undo-deltas in []):
-
-;; 123456789
-;; ---------
-;; aaa       (1 . 4)
-;; aada      (3 . 4)    [3 1]
-;; aabbda    (3 . 5)    [3 2]
-;; aabbdccca (6 . 9)    [6 3]
-;; aabbdccc  ("a" . 9)  [9 -1]
-;; |    | region: "aabbd", from 1 to 6
-;;
-;; Undo in region three times:
-;;
-;; 123456789
-;; ---------
-;; aadccc    ("bb" . 3) [3 -2]
-;; |  |
-;; aaccc     ("d" . 3)  [3 -1]
-;; | |
-;; [no more elements in region]
-;;
-;; The end of the "aaa" insertion, after adjusting through the
-;; undo-deltas, is at 6. Consequently, it is not in the region, which
-;; itself adjusted to end at position 3.
-
-;;
-;; aaa      (1 . 4)
-;; aabba    (3 . 5)    [3 2]
-;; aabbccca (5 . 8)    [5 3]
-;; aabbccc  ("a" . 8)  [8 -1]
-;;
-;; Select "aabb" and undo in region twice
-;;
-;; First yields:
-;; aaccc    ("bb" . 3) [3 -2]
-;;
-;; [Paragraph has some incorrectness.]
-;; Second ought to not find an element to undo, because the "aaa"
-;; insertion is out of the region. Specifically, the end part of it is
-;; after "ccc". The 4 of "aaa" insertion must be adjusted by
-;; undo-deltas of all in order to correctly adjust to 6. To correct
-;; for the ones that were undone, such as ("bb" . 3), their new
-;; undo-deltas must be applied, <3 -2> in this case.
-
-;; Accounts for edge case:
-;;
-;; 123456789
-;; ---------
-;; yyy       (1 . 4)
-;; xxxyyy    (1 . 4)    ?
-;; xxzzxyyy  (3 . 5)    [3 2]
-;; xxzzyy    ("xy" . 5) [5 -2]
-;; |  | region: "xxz", from 1 to 4
-;;
-;; "xxx" insertion element should: (1 . 4) -> (1 . 6) -> (1 . 5)
-;;
-;; Getting (1 . 5) instead of (1 . 4) requires handling the edge
-;; case of applying [5 -2] to (1 . 6).
-;;
-;; But consider if we undid the deletion before the undo in region:
-;;
-;; 123456789
-;; ---------
-;; yyy       (1 . 4)
-;; xxxyyy    (1 . 4)    ?
-;; xxzzxyyy  (3 . 5)    [3 2]
-;; xxzzyy    ("xy" . 5) [5 -2]
-;; xxzzxyyy  (5 . 7)    [5 2]
-;; |  | region: "xxz", from 1 to 4
-;;
-;; The undo system can't tell if the reinsertion of "xy" is an undo of
-;; the delete or new text. So it can't decide if [5 2] should adjust
-;; forward 2 or 1 (to counter balance the edge case's -1). It could
-;; only heuristically disambiguate if it looked at the text which (5
-;; . 7) inserted, but that would require reconstructing it.
-;;
-;; Normally the undo system uses marker adjustments to solve the
-;; analogous problem of deleting text with markers in the
-;; middle. There are no markers for positions being adjusted however.
-;;
-;; Maybe nothing flagrantly wrong happens if "xy" is regarded as new
-;; text. It sounds like a recipe for trouble since it thinks there's a
-;; ghost of "x" in the wrong place. But I think the undo system would
-;; only resurrect it if it resurrected the problematic elements too,
-;; in which case their undo-deltas don't apply.
-
-;; TODO: Tests:
-;;   - Find undo elt near end of history
-;;   - Edge case of undo-delta for deletion elt
-;;   - Test case from bug report that failed with old code
-
-;; TODO: Fix documentation of undo-deltas, given negated understanding
-;; of offset (eg a (TEXT . POS) is positive offset).
+;; undo-make-selective-list assumes in this situation that "ad" was a
+;; new edit. This means the undo system considers there to be a
+;; deleted "ad" between the first and second "d" currently in the
+;; buffer. A choice undo in region could surprise the user with buffer
+;; content: ccaabadaddd . This is a FIXME. Bug 16411 describes the
+;; possibility of undo elements referencing what they undid, and so
+;; resolving the problematic ambiguity.
 
 ;; TODO: Temporary function. This has the same interface guarantees as
 ;; undo-make-selective-list, except now there is no superfluous nil at
@@ -2648,7 +2504,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
      (cons text (max pos (undo-adjust-pos pos deltas))))
     ;; (nil PROPERTY VALUE BEG . END)
     (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
-     `(nil ,prop ,(undo-adjust-pos beg) . ,(undo-adjust-pos end t)))
+     `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
     ;; (apply DELTA START END FUN . ARGS)
     ;; FIXME: (Prior undo in region code didn't implement this.)
     ))
@@ -2783,6 +2639,7 @@ marker adjustment's corresponding (TEXT . POS) element."
 	 (and (>= (car undo-elt) start)
 	      (<= (cdr undo-elt) end)))))
 
+;; TODO: obsolete
 (defun undo-elt-crosses-region (undo-elt start end)
   "Test whether UNDO-ELT crosses one edge of that region START ... END.
 This assumes we have already decided that UNDO-ELT
