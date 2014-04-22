@@ -301,12 +301,20 @@ undo-make-selective-list."
     (undo-boundary)
     (delete-forward-char 2)
     (undo-boundary)
-    (insert "ad")
+    ;; Select "dd"
+    (push-mark (point) t t)
+    (setq mark-active t)
+    (goto-char (point-max))
+    (undo)
     (undo-boundary)
+    (should (string= (buffer-string)
+                     "ccaabaddd"))
+    ;; Select "caab"
     (push-mark 2 t t)
     (setq mark-active t)
-    (search-backward "ad")
+    (goto-char 6)
     (undo)
+    (undo-boundary)
     (should (string= (buffer-string)
                      "ccaaaddd"))))
 
