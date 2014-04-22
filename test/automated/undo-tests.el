@@ -253,23 +253,23 @@
     (buffer-enable-undo)
     (transient-mark-mode 1)
     (insert "12345")
-    (undo-boundary)
     (search-backward "4")
-    (delete-forward-char 1)
     (undo-boundary)
+    (delete-forward-char 1)
     (search-backward "1")
+    (undo-boundary)
     (insert "xxxx")
     (undo-boundary)
     (insert "yy")
-    (undo-boundary)
     (search-forward "35")
+    (undo-boundary)
     ;; Select "35"
     (push-mark (point) t t)
     (setq mark-active t)
     (forward-char -2)
     (undo) ; Expect "4" to come back
     (should (string= (buffer-string)
-                     "xxxyy12345"))))
+                     "xxxxyy12345"))))
 
 (ert-deftest undo-test-in-region-eob ()
   "Test undo in region of a deletion at EOB, demonstrating bug 16411."

@@ -2560,6 +2560,9 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;;   - Edge case of undo-delta for deletion elt
 ;;   - Test case from bug report that failed with old code
 
+;; TODO: Fix documentation of undo-deltas, given negated understanding
+;; of offset (eg a (TEXT . POS) is positive offset).
+
 ;; TODO: Temporary function. This has the same interface guarantees as
 ;; undo-make-selective-list, except now there is no superfluous nil at
 ;; the end of undo list.
@@ -2657,7 +2660,7 @@ or <= based on USE-<."
     (when (if use-<
               (< (car d) pos)
             (<= (car d) pos))
-      (setq pos (+ pos (cdr d))))))
+      (setq pos (- pos (cdr d))))))
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
