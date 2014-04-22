@@ -2500,8 +2500,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
            (undo-adjust-pos end deltas t)))
     ;; (TEXT . POSITION)
     (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
-     ;; TODO: Document use of max for edge case
-     (cons text (max pos (undo-adjust-pos pos deltas))))
+     (cons text (undo-adjust-pos pos deltas)))
     ;; (nil PROPERTY VALUE BEG . END)
     (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
      `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
@@ -2512,11 +2511,17 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 (defun undo-adjust-pos (pos deltas &optional use-<)
   "Adjust POS by the DELTAS list of undo-deltas, comparing with <
 or <= based on USE-<."
-  (dolist (d deltas pos)
-    (when (if use-<
-              (< (car d) pos)
-            (<= (car d) pos))
-      (setq pos (- pos (cdr d))))))
+  (let ((adj-pos pos))
+    (dolist (d
+             deltas
+             ;; Don't allow adj-pos to become less than the position
+             ;; that influenced it. This edge case is described in the
+             ;; overview comments.
+             (max pos adj-pos))
+      (when (if use-<
+                (< (car d) adj-pos)
+              (<= (car d) adj-pos))
+        (setq adj-pos (- adj-pos (cdr d)))))))
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
@@ -2639,7 +2644,6 @@ marker adjustment's corresponding (TEXT . POS) element."
 	 (and (>= (car undo-elt) start)
 	      (<= (cdr undo-elt) end)))))
 
-;; TODO: obsolete
 (defun undo-elt-crosses-region (undo-elt start end)
   "Test whether UNDO-ELT crosses one edge of that region START ... END.
 This assumes we have already decided that UNDO-ELT
@@ -2654,6 +2658,7 @@ is not *inside* the region START...END."
 	 ;; (BEGIN . END)
 	 (and (< (car undo-elt) end)
 	      (> (cdr undo-elt) start)))))
+(make-obsolete 'undo-elt-crosses-region nil "24.5")
 
 ;; Return the first affected buffer position and the delta for an undo element
 ;; delta is defined as the change in subsequent buffer positions if we *did*
