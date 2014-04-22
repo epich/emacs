@@ -247,6 +247,30 @@
     (should (string= (buffer-string)
                      "11131"))))
 
+(ert-deftest undo-test-in-region-deletion ()
+  "Test undoing a deletion to demonstrate bug 17235."
+  (with-temp-buffer
+    (buffer-enable-undo)
+    (transient-mark-mode 1)
+    (insert "12345")
+    (undo-boundary)
+    (search-backward "4")
+    (delete-forward-char 1)
+    (undo-boundary)
+    (search-backward "1")
+    (insert "xxxx")
+    (undo-boundary)
+    (insert "yy")
+    (undo-boundary)
+    (search-forward "35")
+    ;; Select "35"
+    (push-mark (point) t t)
+    (setq mark-active t)
+    (forward-char -2)
+    (undo) ; Expect "4" to come back
+    (should (string= (buffer-string)
+                     "xxxyy12345"))))
+
 (ert-deftest undo-test-in-region-eob ()
   "Test undo in region of a deletion at EOB, demonstrating bug 16411."
   (with-temp-buffer
