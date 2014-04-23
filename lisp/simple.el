@@ -2357,7 +2357,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
       (user-error "No undo information in this buffer"))
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
-	    (undo--make-selective-list (min beg end) (max beg end))
+	    (undo-make-selective-list (min beg end) (max beg end))
 	  buffer-undo-list)))
 
 ;; The positions given in elements of the undo list are the positions
@@ -2422,6 +2422,8 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; TODO: Temporary function. This has the same interface guarantees as
 ;; undo-make-selective-list, except now there is no superfluous nil at
 ;; the end of undo list.
+;;
+;; TODO: Check new undo-make-selective-list returns same as this does.
 (defun undo--make-selective-list (start end)
   (let ((change-group)
         (change-groups nil)
@@ -2487,6 +2489,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
            (push nil selective-list))
       selective-list)))
 
+;; TODO: Relocate these two functions below undo-make-selective-list
 (defun undo-adjust-elt (elt deltas)
   "Return adjustment of undo element ELT by the undo DELTAS
 list."
@@ -2506,6 +2509,7 @@ list."
      `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
     ;; (apply DELTA START END FUN . ARGS)
     ;; FIXME: (Prior undo in region code didn't implement this.)
+    ;; TODO: All others, return elt
     ))
 
 (defun undo-adjust-pos (pos deltas &optional use-<)
@@ -2527,85 +2531,47 @@ The elements come from `buffer-undo-list', but we keep only the
 elements inside this region, and discard those outside this
 region. The elements' positions are adjusted so as the returned
 list can be applied to the current buffer."
-  (let ((undo-list-copy (undo-copy-list buffer-undo-list))
-	(undo-list (list nil))
-	some-rejected
-	undo-elt temp-undo-list delta)
-    (while undo-list-copy
-      (setq undo-elt (car undo-list-copy))
-      (let ((keep-this
-	     (cond ((and (consp undo-elt) (eq (car undo-elt) t))
-		    ;; This is a "was unmodified" element.
-		    ;; Keep it if we have kept everything thus far.
-		    (not some-rejected))
-                   ;; Skip over marker adjustments, instead relying on
-                   ;; finding them after (TEXT . POS) elements
-                   ((markerp (car-safe undo-elt))
-                    nil)
-		   (t
-		    (undo-elt-in-region undo-elt start end)))))
-	(if keep-this
-	    (progn
-	      (setq end (+ end (cdr (undo-delta undo-elt))))
-	      ;; Don't put two nils together in the list
-	      (when (not (and (eq (car undo-list) nil)
-                              (eq undo-elt nil)))
-                (setq undo-list (cons undo-elt undo-list))
-                ;; If (TEXT . POS), "keep" its subsequent (MARKER
-                ;; . ADJUSTMENT) whose markers haven't moved.
-                (when (and (stringp (car-safe undo-elt))
-                           (integerp (cdr-safe undo-elt)))
-                  (let ((list-i (cdr undo-list-copy)))
+  (let ((ulist buffer-undo-list)
+        ;; A list of position adjusted undo elements in the region.
+        (selective-list (list nil))
+        ;; A list of undo-deltas for out of region undo elements.
+        undo-deltas
+        undo-elt)
+    (while ulist
+      (setq undo-elt (car ulist))
+      (cond
+       ((null undo-elt)
+        ;; Don't put two nils together in the list
+        (when (car selective-list)
+          (push nil selective-list)))
+       ((and (consp undo-elt) (eq (car undo-elt) t))
+        ;; This is a "was unmodified" element.  Keep it
+        ;; if we have kept everything thus far.
+        (when (not undo-deltas)
+          (push undo-elt selective-list)))
+       ;; Skip over marker adjustments, instead relying
+       ;; on finding them after (TEXT . POS) elements
+       ((markerp (car-safe undo-elt))
+        nil)
+       (t
+        (let ((adjusted-undo-elt (undo-adjust-elt undo-elt
+                                                  undo-deltas)))
+          (if (undo-elt-in-region adjusted-undo-elt start end)
+              (progn
+                (setq end (+ end (cdr (undo-delta adjusted-undo-elt))))
+                (push adjusted-undo-elt selective-list)
+                ;; Keep (MARKER . ADJUSTMENT) if their (TEXT . POS) was
+                ;; kept. primitive-undo may discard them later.
+                (when (and (stringp (car-safe adjusted-undo-elt))
+                           (integerp (cdr-safe adjusted-undo-elt)))
+                  (let ((list-i (cdr ulist)))
                     (while (markerp (car-safe (car list-i)))
-                      (let* ((adj-elt (pop list-i))
-                             (m (car adj-elt)))
-                        (and (eq (marker-buffer m) (current-buffer))
-                             (= (cdr undo-elt) m)
-                             (push adj-elt undo-list))))))))
-	  (if (undo-elt-crosses-region undo-elt start end)
-	      (setq undo-list-copy nil)
-	    (setq some-rejected t)
-	    (setq temp-undo-list (cdr undo-list-copy))
-	    (setq delta (undo-delta undo-elt))
-
-	    (when (/= (cdr delta) 0)
-	      (let ((position (car delta))
-		    (offset (cdr delta)))
-
-		;; Loop down the earlier events adjusting their buffer
-		;; positions to reflect the fact that a change to the buffer
-		;; isn't being undone. We only need to process those element
-		;; types which undo-elt-in-region will return as being in
-		;; the region since only those types can ever get into the
-		;; output
-
-		(while temp-undo-list
-		  (setq undo-elt (car temp-undo-list))
-		  (cond ((integerp undo-elt)
-			 (if (>= undo-elt position)
-			     (setcar temp-undo-list (- undo-elt offset))))
-			((atom undo-elt) nil)
-			((stringp (car undo-elt))
-			 ;; (TEXT . POSITION)
-			 (let ((text-pos (abs (cdr undo-elt)))
-			       (point-at-end (< (cdr undo-elt) 0 )))
-			   (if (>= text-pos position)
-			       (setcdr undo-elt (* (if point-at-end -1 1)
-						   (- text-pos offset))))))
-			((integerp (car undo-elt))
-			 ;; (BEGIN . END)
-			 (when (>= (car undo-elt) position)
-			   (setcar undo-elt (- (car undo-elt) offset))
-			   (setcdr undo-elt (- (cdr undo-elt) offset))))
-			((null (car undo-elt))
-			 ;; (nil PROPERTY VALUE BEG . END)
-			 (let ((tail (nthcdr 3 undo-elt)))
-			   (when (>= (car tail) position)
-			     (setcar tail (- (car tail) offset))
-			     (setcdr tail (- (cdr tail) offset))))))
-		  (setq temp-undo-list (cdr temp-undo-list))))))))
-      (setq undo-list-copy (cdr undo-list-copy)))
-    (nreverse undo-list)))
+                      (push (pop list-i) selective-list)))))
+            (let ((delta (undo-delta undo-elt)))
+              (when (/= 0 (cdr delta))
+                (push delta undo-deltas)))))))
+      (pop ulist))
+    (nreverse selective-list)))
 
 (defun undo-elt-in-region (undo-elt start end)
   "Determine whether UNDO-ELT falls inside the region START ... END.
