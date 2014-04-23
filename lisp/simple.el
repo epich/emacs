@@ -2489,42 +2489,6 @@ are ignored.  If BEG and END are nil, all undo elements are used."
            (push nil selective-list))
       selective-list)))
 
-;; TODO: Relocate these two functions below undo-make-selective-list
-(defun undo-adjust-elt (elt deltas)
-  "Return adjustment of undo element ELT by the undo DELTAS
-list."
-  (pcase elt
-    ;; POSITION
-    ((pred integerp)
-     (undo-adjust-pos elt deltas))
-    ;; (BEG . END)
-    (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
-     (cons (undo-adjust-pos beg deltas)
-           (undo-adjust-pos end deltas t)))
-    ;; (TEXT . POSITION)
-    (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
-     (cons text (undo-adjust-pos pos deltas)))
-    ;; (nil PROPERTY VALUE BEG . END)
-    (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
-     `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
-    ;; (apply DELTA START END FUN . ARGS)
-    ;; FIXME: (Prior undo in region code didn't implement this.)
-    ;; TODO: All others, return elt
-    ))
-
-(defun undo-adjust-pos (pos deltas &optional use-<)
-  "Return adjustment of POS by the undo DELTAS list, comparing
-with < or <= based on USE-<."
-  (dolist (d deltas pos)
-    (when (if use-<
-              (< (car d) pos)
-            (<= (car d) pos))
-      (setq pos
-            ;; Don't allow pos to become less than the undo-delta
-            ;; position. This edge case is described in the overview
-            ;; comments.
-            (max (car d) (- pos (cdr d)))))))
-
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
 The elements come from `buffer-undo-list', but we keep only the
@@ -2623,6 +2587,41 @@ is not *inside* the region START...END."
 	 (and (< (car undo-elt) end)
 	      (> (cdr undo-elt) start)))))
 (make-obsolete 'undo-elt-crosses-region nil "24.5")
+
+(defun undo-adjust-elt (elt deltas)
+  "Return adjustment of undo element ELT by the undo DELTAS
+list."
+  (pcase elt
+    ;; POSITION
+    ((pred integerp)
+     (undo-adjust-pos elt deltas))
+    ;; (BEG . END)
+    (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
+     (cons (undo-adjust-pos beg deltas)
+           (undo-adjust-pos end deltas t)))
+    ;; (TEXT . POSITION)
+    (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
+     (cons text (undo-adjust-pos pos deltas)))
+    ;; (nil PROPERTY VALUE BEG . END)
+    (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
+     `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
+    ;; (apply DELTA START END FUN . ARGS)
+    ;; FIXME: (Prior undo in region code didn't implement this.)
+    ;; All others return same elt
+    (_ elt)))
+
+(defun undo-adjust-pos (pos deltas &optional use-<)
+  "Return adjustment of POS by the undo DELTAS list, comparing
+with < or <= based on USE-<."
+  (dolist (d deltas pos)
+    (when (if use-<
+              (< (car d) pos)
+            (<= (car d) pos))
+      (setq pos
+            ;; Don't allow pos to become less than the undo-delta
+            ;; position. This edge case is described in the overview
+            ;; comments.
+            (max (car d) (- pos (cdr d)))))))
 
 ;; Return the first affected buffer position and the delta for an undo element
 ;; delta is defined as the change in subsequent buffer positions if we *did*
