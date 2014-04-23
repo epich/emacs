@@ -2511,17 +2511,15 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 (defun undo-adjust-pos (pos deltas &optional use-<)
   "Adjust POS by the DELTAS list of undo-deltas, comparing with <
 or <= based on USE-<."
-  (let ((adj-pos pos))
-    (dolist (d
-             deltas
-             ;; Don't allow adj-pos to become less than the position
-             ;; that influenced it. This edge case is described in the
-             ;; overview comments.
-             (max pos adj-pos))
-      (when (if use-<
-                (< (car d) adj-pos)
-              (<= (car d) adj-pos))
-        (setq adj-pos (- adj-pos (cdr d)))))))
+  (dolist (d deltas pos)
+    (when (if use-<
+              (< (car d) pos)
+            (<= (car d) pos))
+      (setq pos
+            ;; Don't allow pos to become less than the undo-delta
+            ;; position. This edge case is described in the overview
+            ;; comments.
+            (max (car d) (- pos (cdr d)))))))
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
