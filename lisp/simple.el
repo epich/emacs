@@ -2368,7 +2368,7 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;;
 ;; Undo in region is a use case that requires adjustments to undo
 ;; elements. It must adjust positions of elements in the region based
-;; on newer elements not in the region so as they are correctly
+;; on newer elements not in the region so as they may be correctly
 ;; applied in the current buffer. undo-make-selective-list
 ;; accomplishes this with its undo-deltas list of adjustments. An
 ;; example undo history from oldest to newest:
@@ -2393,31 +2393,30 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; buffer-undo-list. The undo-delta (1 . -2) causes (3 . 4) to become
 ;; (5 . 6). The next three undo-deltas cause no adjustment, so (5 . 6)
 ;; is assessed as in the region and placed in the selective
-;; list. Notably, the end of region adjusts from "2 to 6" to "2 to 5"
-;; due to the selected element. The "b" insertion is the only element
-;; fully in the region, so in this example undo-make-selective-list
-;; returns (nil (5 . 6)).
+;; list. Notably, the end of region itself adjusts from "2 to 6" to "2
+;; to 5" due to the selected element. The "b" insertion is the only
+;; element fully in the region, so in this example
+;; undo-make-selective-list returns (nil (5 . 6)).
 ;;
 ;; The adjustment of the (7 . 10) insertion of "ddd" shows an edge
-;; case. Normally an undo-delta of (6 . 2) would cause element (A . B)
-;; to adjust to ((- A 2) . (- B 2)). However, A can't be less than 6,
-;; so in this case the (7 . 10) element adjusts to (6 . 8) due to the
-;; (6 . 2) undo-delta.
+;; case. Normally an undo-delta of (6 . 2) would cause positions after
+;; 6 to adjust by 2. However, they shouldn't adjust to less than 6, so
+;; (7 . 10) adjusts to (6 . 8) due to this particular undo delta.
 ;;
 ;; More interesting is how to adjust the "ddd" insertion due to the
 ;; next undo-delta: (6 . -2). If the reinsertion of "ad" was an undo,
-;; it is most logical that the "ddd" insertion would adjust by (7
+;; it is most sensical that the total "ddd" insertion adjustment be (7
 ;; . 10) -> (6 . 8) -> (7 . 10). However, if the reinsertion was a
-;; normal user edit, then most logical is: (7 . 10) -> (6 . 8) -> (8
+;; normal user edit, then most sensical is: (7 . 10) -> (6 . 8) -> (8
 ;; . 10). The undo history is ambiguous about which.
 ;;
 ;; undo-make-selective-list assumes in this situation that "ad" was a
 ;; new edit. This means the undo system considers there to be a
-;; deleted "ad" between the first and second "d" currently in the
-;; buffer. A choice undo in region could surprise the user with buffer
-;; content: ccaabadaddd . This is a FIXME. Bug 16411 describes the
-;; possibility of undo elements referencing what they undid, and so
-;; resolving the problematic ambiguity.
+;; deleted "ad" at position 8 of buffer content "ccaabaddd". If the
+;; user undos in region "7 to 9", they could be surprised to get
+;; buffer content: "ccaabadaddd" . This is a FIXME. Bug 16411
+;; describes the possibility of undo elements referencing what they
+;; undid, and so resolving the problematic ambiguity.
 
 ;; TODO: Temporary function. This has the same interface guarantees as
 ;; undo-make-selective-list, except now there is no superfluous nil at
