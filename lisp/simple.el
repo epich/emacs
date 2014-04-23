@@ -2432,7 +2432,6 @@ are ignored.  If BEG and END are nil, all undo elements are used."
     (apply 'nconc change-groups)))
 
 (defun undo-make-change-group-generator (start end)
-  ;; TODO document
   (let (;; Cons of buffer-undo-list for where the generator left off
         (ulist buffer-undo-list)
         ;; A list of position adjusted undo elements of successive
@@ -2489,7 +2488,8 @@ are ignored.  If BEG and END are nil, all undo elements are used."
       selective-list)))
 
 (defun undo-adjust-elt (elt deltas)
-  ;; TODO: Document
+  "Return adjustment of undo element ELT by the undo DELTAS
+list."
   (pcase elt
     ;; POSITION
     ((pred integerp)
@@ -2509,8 +2509,8 @@ are ignored.  If BEG and END are nil, all undo elements are used."
     ))
 
 (defun undo-adjust-pos (pos deltas &optional use-<)
-  "Adjust POS by the DELTAS list of undo-deltas, comparing with <
-or <= based on USE-<."
+  "Return adjustment of POS by the undo DELTAS list, comparing
+with < or <= based on USE-<."
   (dolist (d deltas pos)
     (when (if use-<
               (< (car d) pos)
@@ -2523,10 +2523,10 @@ or <= based on USE-<."
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
-The elements come from `buffer-undo-list', but we keep only
-the elements inside this region, and discard those outside this region.
-If we find an element that crosses an edge of this region,
-we stop and ignore all further elements."
+The elements come from `buffer-undo-list', but we keep only the
+elements inside this region, and discard those outside this
+region. The elements' positions are adjusted so as the returned
+list can be applied to the current buffer."
   (let ((undo-list-copy (undo-copy-list buffer-undo-list))
 	(undo-list (list nil))
 	some-rejected
