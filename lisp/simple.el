@@ -2399,24 +2399,25 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; undo-make-selective-list returns (nil (5 . 6)).
 ;;
 ;; The adjustment of the (7 . 10) insertion of "ddd" shows an edge
-;; case. Normally an undo-delta of (6 . 2) would cause positions after
-;; 6 to adjust by 2. However, they shouldn't adjust to less than 6, so
-;; (7 . 10) adjusts to (6 . 8) due to this particular undo delta.
+;; case. It is adjusted through the undo-deltas: ((6 . 2) (6
+;; . -2)). Normally an undo-delta of (6 . 2) would cause positions
+;; after 6 to adjust by 2. However, they shouldn't adjust to less than
+;; 6, so (7 . 10) adjusts to (6 . 8) due to the first undo delta.
 ;;
 ;; More interesting is how to adjust the "ddd" insertion due to the
-;; next undo-delta: (6 . -2). If the reinsertion of "ad" was an undo,
-;; it is most sensical that the total "ddd" insertion adjustment be (7
-;; . 10) -> (6 . 8) -> (7 . 10). However, if the reinsertion was a
-;; normal user edit, then most sensical is: (7 . 10) -> (6 . 8) -> (8
-;; . 10). The undo history is ambiguous about which.
+;; next undo-delta: (6 . -2), corresponding to reinsertion of "ad". If
+;; the reinsertion was a manual retyping of "ad", then the total
+;; adjustment should be (7 . 10) -> (6 . 8) -> (8 . 10). However, if
+;; the reinsertion was due to undo, one might expect the first "d"
+;; character would again be a part of the "ddd" text, meaning its
+;; total adjustment would be (7 . 10) -> (6 . 8) -> (7 . 10).
 ;;
 ;; undo-make-selective-list assumes in this situation that "ad" was a
-;; new edit. This means the undo system considers there to be a
-;; deleted "ad" at position 8 of buffer content "ccaabaddd". If the
-;; user undos in region "7 to 9", they could be surprised to get
-;; buffer content: "ccaabadaddd" . This is a FIXME. Bug 16411
-;; describes the possibility of undo elements referencing what they
-;; undid, and so resolving the problematic ambiguity.
+;; new edit, even if it was inserted because of an undo. Consequently,
+;; if the user undos in region "8 to 10" of the "ccaabaddd" buffer,
+;; they could be surprised that it becomes "ccaabad", as though the
+;; first "d" became detached from the original "ddd" insertion. This
+;; quirk is a FIXME.
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
@@ -2527,7 +2528,7 @@ list."
            (undo-adjust-pos end deltas t)))
     ;; (TEXT . POSITION)
     (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
-     (cons text (undo-adjust-pos pos deltas)))
+     (cons text (undo-adjust-pos pos deltas t))) ; TODO: Is this right?
     ;; (nil PROPERTY VALUE BEG . END)
     (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
      `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
