@@ -2374,14 +2374,14 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; example undo history from oldest to newest:
 ;;
 ;; buf pos:
-;; 123456789 buffer-undo-list  undo-deltas
-;; --------- ----------------  -----------
-;; aaa       (1 . 4)           (1 . -3)
-;; aaba      (3 . 4)           N/A (in region)
-;; ccaaba    (1 . 3)           (1 . -2)
-;; ccaabaddd (7 . 10)          (7 . -3)
-;; ccaabdd   ("ad" . 6)        (6 . 2)
-;; ccaabaddd (6 . 8)           (6 . -2)
+;; 123456789 buffer-undo-list undo-deltas
+;; --------- ---------------- -----------
+;; aaa       (1 . 4)          (1 . -3)
+;; aaba      (3 . 4)          N/A (in region)
+;; ccaaba    (1 . 3)          (1 . -2)
+;; ccaabaddd (7 . 10)         (7 . -3)
+;; ccaabdd   ("ad" . 6)       (6 . 2)
+;; ccaabaddd (6 . 8)          (6 . -2)
 ;;  |   |<-- region: "caab", from 2 to 6
 ;;
 ;; When the user starts a run of undos in region,
@@ -2418,6 +2418,21 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; they could be surprised that it becomes "ccaabad", as though the
 ;; first "d" became detached from the original "ddd" insertion. This
 ;; quirk is a FIXME.
+
+;: TODO (with (TEXT . POSITION) using < comparator
+;; buf pos:
+;; 123456789 buffer-undo-list undo-deltas
+;; --------- ---------------- -----------
+;; aaa       (1 . 4)          TODO
+;; abbaa     (2 . 4)          unexpectedly in region
+;; aaa       ("bb" . 2)       (2 . 2)
+;; acccaa    (2 . 5)          (2 . -3)
+;;     | | region 5 to 7
+;; aaa
+;;
+;; The insertion of "bb" adjusted to (4 . 1)! If comparator was <=,
+;; "bb" deletion would have been found in region. Don't know if that's
+;; a root solution.
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
