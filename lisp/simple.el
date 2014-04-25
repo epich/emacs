@@ -2433,6 +2433,10 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; The insertion of "bb" adjusted to (4 . 1)! If comparator was <=,
 ;; "bb" deletion would have been found in region. Don't know if that's
 ;; a root solution.
+;;
+;; The code accounting for (BEG . END) adjusting to the same positions
+;; (ADJ . ADJ) is needed. Whether (ADJ . ADJ) adjusts by < or <=,
+;; (TEXT . POSITION) should probably use the same.
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
@@ -2539,8 +2543,24 @@ list."
      (undo-adjust-pos elt deltas))
     ;; (BEG . END)
     (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
-     (cons (undo-adjust-pos beg deltas)
-           (undo-adjust-pos end deltas t)))
+     ;; TODO: 
+     ;; (beg . end) can adjust to the same positions, common when an
+     ;; insertion is undone and the undo is out of region:
+     ;;
+     ;; buf pos:
+     ;; 123456789 buffer-undo-list undo-deltas
+     ;; --------- ---------------- -----------
+     ;; [...]
+     ;; abbaa     (2 . 4)          (2 . -2)
+     ;; aaa       ("bb" . 2)       (2 . 2)
+     ;;
+     ;; "bb" insertion (2 . 4) adjusts to (2 . 2).
+     ;;
+     ;; In this situation, beg should be adjusted by the < comparator.
+     (let ((adj-end (undo-adjust-pos end deltas t)))
+       ;; TODO: Is this right? Document reason
+       (cons (min adj-end (undo-adjust-pos beg deltas))
+             adj-end)))
     ;; (TEXT . POSITION)
     (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
      (cons text (undo-adjust-pos pos deltas t))) ; TODO: Is this right?
