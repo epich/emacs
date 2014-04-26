@@ -2419,25 +2419,6 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; first "d" became detached from the original "ddd" insertion. This
 ;; quirk is a FIXME.
 
-;: TODO (with (TEXT . POSITION) using < comparator
-;; buf pos:
-;; 123456789 buffer-undo-list undo-deltas
-;; --------- ---------------- -----------
-;; aaa       (1 . 4)          TODO
-;; abbaa     (2 . 4)          unexpectedly in region
-;; aaa       ("bb" . 2)       (2 . 2)
-;; acccaa    (2 . 5)          (2 . -3)
-;;     | | region 5 to 7
-;; aaa
-;;
-;; The insertion of "bb" adjusted to (4 . 1)! If comparator was <=,
-;; "bb" deletion would have been found in region. Don't know if that's
-;; a root solution.
-;;
-;; The code accounting for (BEG . END) adjusting to the same positions
-;; (ADJ . ADJ) is needed. Whether (ADJ . ADJ) adjusts by < or <=,
-;; (TEXT . POSITION) should probably use the same.
-
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
 The elements come from `buffer-undo-list', but we keep only the
@@ -2543,8 +2524,7 @@ list."
      (undo-adjust-pos elt deltas))
     ;; (BEG . END)
     (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
-     ;; TODO: 
-     ;; (beg . end) can adjust to the same positions, common when an
+     ;; (BEG . END) can adjust to the same positions, commonly when an
      ;; insertion is undone and the undo is out of region:
      ;;
      ;; buf pos:
@@ -2554,23 +2534,25 @@ list."
      ;; abbaa     (2 . 4)          (2 . -2)
      ;; aaa       ("bb" . 2)       (2 . 2)
      ;;
-     ;; "bb" insertion (2 . 4) adjusts to (2 . 2).
+     ;; "bb" insertion (2 . 4) adjusts to (2 . 2). It is preferable
+     ;; that further adjustments to this element behave as (TEXT
+     ;; . POSITION) does. The options are:
      ;;
-     ;; In this situation, beg should be adjusted by the < comparator.
+     ;;   1: If (TEXT . POSITION) adjusts with use-< nil, then (BEG
+     ;;     . END) should become (ADJ-BEG . (max ADJ-BEG
+     ;;     ADJ-END)). The resulting behavior is analogous to a marker
+     ;;     insertion-type t.
+     ;;   2: If (TEXT . POSITION) adjusts with use-< t, then (BEG
+     ;;     . END) should become ((min ADJ-BEG ADJ-END)
+     ;;     . ADJ-END). The resulting behavior is analogous to a
+     ;;     marker insertion-type nil.
      ;;
-     ;; TODO: Which of these? Should be consistent with (TEXT . POSITION) comparator.
-     ;;
-     ;; TODO: Document
-     ;;
-     ;; Use this if (TEXT . POSITION) calls undo-adjust-pos with use-< nil.
+     ;; There was no strong reason to prefer one or the other, except
+     ;; that the first is more consistent with prior undo in region
+     ;; behavior.
      (let ((adj-beg (undo-adjust-pos beg deltas)))
        (cons adj-beg
-             (max adj-beg (undo-adjust-pos end deltas t))))
-     ;; Use this if (TEXT . POSITION) calls undo-adjust-pos with use-< t.
-     ;; (let ((adj-end (undo-adjust-pos end deltas t)))
-     ;;   (cons (min adj-end (undo-adjust-pos beg deltas))
-     ;;         adj-end))
-     )
+             (max adj-beg (undo-adjust-pos end deltas t)))))
     ;; (TEXT . POSITION)
     (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
      (cons text (undo-adjust-pos pos deltas)))
