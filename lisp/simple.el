@@ -2538,7 +2538,7 @@ list."
     (_ elt)))
 
 ;; (BEG . END) can adjust to the same positions, commonly when an
-;; insertion is undone and the undo is out of region, for example:
+;; insertion was undone and they are out of region, for example:
 ;;
 ;; buf pos:
 ;; 123456789 buffer-undo-list undo-deltas
@@ -2548,19 +2548,15 @@ list."
 ;; aaa       ("bb" . 2)       (2 . 2)
 ;; [...]
 ;;
-;; "bb" insertion (2 . 4) adjusts to (2 . 2). It is preferable that
-;; further adjustments to this element behave as (TEXT . POSITION)
-;; does. The options are:
+;; "bb" insertion (2 . 4) adjusts to (2 . 2) because of the subsequent
+;; undo. Further adjustments to such an element should be the same as
+;; for (TEXT . POSITION) elements. The options are:
 ;;
-;;   1: If (TEXT . POSITION) adjusts with use-< nil, then prevent the
-;;      END in (BEG . END) from adjusting to less than the adjusted
-;;      BEG. The resulting behavior is analogous to a marker
-;;      insertion-type t.
+;;   1: POSITION adjusts using <= (use-< nil), resulting in behavior
+;;      analogous to marker insertion-type t.
 ;;
-;;   2: If (TEXT . POSITION) adjusts with use-< t, then prevent the
-;;      BEG in (BEG . END) from adjusting to more than the adjusted
-;;      END.  The resulting behavior is analogous to a marker
-;;      insertion-type nil.
+;;   2: POSITION adjusts using <, resulting in behavior analogous to
+;;      marker insertion-type nil.
 ;;
 ;; There was no strong reason to prefer one or the other, except that
 ;; the first is more consistent with prior undo in region behavior.
