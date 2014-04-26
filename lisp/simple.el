@@ -2557,13 +2557,23 @@ list."
      ;; "bb" insertion (2 . 4) adjusts to (2 . 2).
      ;;
      ;; In this situation, beg should be adjusted by the < comparator.
-     (let ((adj-end (undo-adjust-pos end deltas t)))
-       ;; TODO: Is this right? Document reason
-       (cons (min adj-end (undo-adjust-pos beg deltas))
-             adj-end)))
+     ;;
+     ;; TODO: Which of these? Should be consistent with (TEXT . POSITION) comparator.
+     ;;
+     ;; TODO: Document
+     ;;
+     ;; Use this if (TEXT . POSITION) calls undo-adjust-pos with use-< nil.
+     (let ((adj-beg (undo-adjust-pos beg deltas)))
+       (cons adj-beg
+             (max adj-beg (undo-adjust-pos end deltas t))))
+     ;; Use this if (TEXT . POSITION) calls undo-adjust-pos with use-< t.
+     ;; (let ((adj-end (undo-adjust-pos end deltas t)))
+     ;;   (cons (min adj-end (undo-adjust-pos beg deltas))
+     ;;         adj-end))
+     )
     ;; (TEXT . POSITION)
     (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
-     (cons text (undo-adjust-pos pos deltas t))) ; TODO: Is this right?
+     (cons text (undo-adjust-pos pos deltas)))
     ;; (nil PROPERTY VALUE BEG . END)
     (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
      `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
