@@ -2524,49 +2524,53 @@ list."
      (undo-adjust-pos elt deltas))
     ;; (BEG . END)
     (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
-     ;; (BEG . END) can adjust to the same positions, commonly when an
-     ;; insertion is undone and the undo is out of region:
-     ;;
-     ;; buf pos:
-     ;; 123456789 buffer-undo-list undo-deltas
-     ;; --------- ---------------- -----------
-     ;; [...]
-     ;; abbaa     (2 . 4)          (2 . -2)
-     ;; aaa       ("bb" . 2)       (2 . 2)
-     ;; [...]
-     ;;
-     ;; "bb" insertion (2 . 4) adjusts to (2 . 2). It is preferable
-     ;; that further adjustments to this element behave as (TEXT
-     ;; . POSITION) does. The options are:
-     ;;
-     ;;   1: If (TEXT . POSITION) adjusts with use-< nil, then (BEG
-     ;;     . END) should become (ADJ-BEG . (max ADJ-BEG
-     ;;     ADJ-END)). The resulting behavior is analogous to a marker
-     ;;     insertion-type t.
-     ;;   2: If (TEXT . POSITION) adjusts with use-< t, then (BEG
-     ;;     . END) should become ((min ADJ-BEG ADJ-END)
-     ;;     . ADJ-END). The resulting behavior is analogous to a
-     ;;     marker insertion-type nil.
-     ;;
-     ;; There was no strong reason to prefer one or the other, except
-     ;; that the first is more consistent with prior undo in region
-     ;; behavior.
-     (let ((adj-beg (undo-adjust-pos beg deltas)))
-       (cons adj-beg
-             (max adj-beg (undo-adjust-pos end deltas t)))))
+     (undo-adjust-beg-end beg end deltas))
     ;; (TEXT . POSITION)
     (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
-     (cons text (* (if (< pos 0)
-                       -1
-                     1)
+     (cons text (* (if (< pos 0) -1 1)
                    (undo-adjust-pos (abs pos) deltas))))
     ;; (nil PROPERTY VALUE BEG . END)
     (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
-     `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
+     `(nil ,prop ,val . ,(undo-adjust-beg-end beg end deltas)))
     ;; (apply DELTA START END FUN . ARGS)
     ;; FIXME: (Prior undo in region code didn't implement this.)
     ;; All others return same elt
     (_ elt)))
+
+;; (BEG . END) can adjust to the same positions, commonly when an
+;; insertion is undone and the undo is out of region, for example:
+;;
+;; buf pos:
+;; 123456789 buffer-undo-list undo-deltas
+;; --------- ---------------- -----------
+;; [...]
+;; abbaa     (2 . 4)          (2 . -2)
+;; aaa       ("bb" . 2)       (2 . 2)
+;; [...]
+;;
+;; "bb" insertion (2 . 4) adjusts to (2 . 2). It is preferable that
+;; further adjustments to this element behave as (TEXT . POSITION)
+;; does. The options are:
+;;
+;;   1: If (TEXT . POSITION) adjusts with use-< nil, then prevent the
+;;      END in (BEG . END) from adjusting to less than the adjusted
+;;      BEG. The resulting behavior is analogous to a marker
+;;      insertion-type t.
+;;
+;;   2: If (TEXT . POSITION) adjusts with use-< t, then prevent the
+;;      BEG in (BEG . END) from adjusting to more than the adjusted
+;;      END.  The resulting behavior is analogous to a marker
+;;      insertion-type nil.
+;;
+;; There was no strong reason to prefer one or the other, except that
+;; the first is more consistent with prior undo in region behavior.
+(defun undo-adjust-beg-end (beg end deltas)
+  "Return cons of adjustments to BEG and END by the undo DELTAS
+list."
+  (let ((adj-beg (undo-adjust-pos beg deltas)))
+    ;; Note: option 2 above would be like (cons (min ...) adj-end)
+    (cons adj-beg
+          (max adj-beg (undo-adjust-pos end deltas t)))))
 
 (defun undo-adjust-pos (pos deltas &optional use-<)
   "Return adjustment of POS by the undo DELTAS list, comparing
