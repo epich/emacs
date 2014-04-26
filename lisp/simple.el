@@ -2556,7 +2556,10 @@ list."
              (max adj-beg (undo-adjust-pos end deltas t)))))
     ;; (TEXT . POSITION)
     (`(,(and text (pred stringp)) . ,(and pos (pred integerp)))
-     (cons text (undo-adjust-pos pos deltas)))
+     (cons text (* (if (< pos 0)
+                       -1
+                     1)
+                   (undo-adjust-pos (abs pos) deltas))))
     ;; (nil PROPERTY VALUE BEG . END)
     (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
      `(nil ,prop ,val ,(undo-adjust-pos beg deltas) . ,(undo-adjust-pos end deltas t)))
