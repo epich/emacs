@@ -2533,6 +2533,7 @@ list."
      ;; [...]
      ;; abbaa     (2 . 4)          (2 . -2)
      ;; aaa       ("bb" . 2)       (2 . 2)
+     ;; [...]
      ;;
      ;; "bb" insertion (2 . 4) adjusts to (2 . 2). It is preferable
      ;; that further adjustments to this element behave as (TEXT
