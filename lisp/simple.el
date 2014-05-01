@@ -2361,16 +2361,16 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 	  buffer-undo-list)))
 
 ;; The positions given in elements of the undo list are the positions
-;; as of the time that element was recorded to undo history. In
+;; as of the time that element was recorded to undo history.  In
 ;; general, subsequent buffer edits render those positions invalid in
 ;; the current buffer, unless adjusted according to the intervening
 ;; undo elements.
 ;;
 ;; Undo in region is a use case that requires adjustments to undo
-;; elements. It must adjust positions of elements in the region based
+;; elements.  It must adjust positions of elements in the region based
 ;; on newer elements not in the region so as they may be correctly
-;; applied in the current buffer. undo-make-selective-list
-;; accomplishes this with its undo-deltas list of adjustments. An
+;; applied in the current buffer.  undo-make-selective-list
+;; accomplishes this with its undo-deltas list of adjustments.  An
 ;; example undo history from oldest to newest:
 ;;
 ;; buf pos:
@@ -2386,44 +2386,44 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;;
 ;; When the user starts a run of undos in region,
 ;; undo-make-selective-list is called to create the full list of in
-;; region elements. Each element is adjusted forward chronologically
+;; region elements.  Each element is adjusted forward chronologically
 ;; through undo-deltas to determine if it is in the region.
 ;;
 ;; In the above example, the insertion of "b" is (3 . 4) in the
-;; buffer-undo-list. The undo-delta (1 . -2) causes (3 . 4) to become
-;; (5 . 6). The next three undo-deltas cause no adjustment, so (5 . 6)
-;; is assessed as in the region and placed in the selective
-;; list. Notably, the end of region itself adjusts from "2 to 6" to "2
-;; to 5" due to the selected element. The "b" insertion is the only
-;; element fully in the region, so in this example
-;; undo-make-selective-list returns (nil (5 . 6)).
+;; buffer-undo-list.  The undo-delta (1 . -2) causes (3 . 4) to become
+;; (5 . 6).  The next three undo-deltas cause no adjustment, so (5
+;; . 6) is assessed as in the region and placed in the selective list.
+;; Notably, the end of region itself adjusts from "2 to 6" to "2 to 5"
+;; due to the selected element.  The "b" insertion is the only element
+;; fully in the region, so in this example undo-make-selective-list
+;; returns (nil (5 . 6)).
 ;;
 ;; The adjustment of the (7 . 10) insertion of "ddd" shows an edge
-;; case. It is adjusted through the undo-deltas: ((6 . 2) (6
-;; . -2)). Normally an undo-delta of (6 . 2) would cause positions
-;; after 6 to adjust by 2. However, they shouldn't adjust to less than
-;; 6, so (7 . 10) adjusts to (6 . 8) due to the first undo delta.
+;; case.  It is adjusted through the undo-deltas: ((6 . 2) (6 . -2)).
+;; Normally an undo-delta of (6 . 2) would cause positions after 6 to
+;; adjust by 2.  However, they shouldn't adjust to less than 6, so (7
+;; . 10) adjusts to (6 . 8) due to the first undo delta.
 ;;
 ;; More interesting is how to adjust the "ddd" insertion due to the
-;; next undo-delta: (6 . -2), corresponding to reinsertion of "ad". If
-;; the reinsertion was a manual retyping of "ad", then the total
-;; adjustment should be (7 . 10) -> (6 . 8) -> (8 . 10). However, if
+;; next undo-delta: (6 . -2), corresponding to reinsertion of "ad".
+;; If the reinsertion was a manual retyping of "ad", then the total
+;; adjustment should be (7 . 10) -> (6 . 8) -> (8 . 10).  However, if
 ;; the reinsertion was due to undo, one might expect the first "d"
 ;; character would again be a part of the "ddd" text, meaning its
 ;; total adjustment would be (7 . 10) -> (6 . 8) -> (7 . 10).
 ;;
 ;; undo-make-selective-list assumes in this situation that "ad" was a
-;; new edit, even if it was inserted because of an undo. Consequently,
-;; if the user undos in region "8 to 10" of the "ccaabaddd" buffer,
-;; they could be surprised that it becomes "ccaabad", as though the
-;; first "d" became detached from the original "ddd" insertion. This
-;; quirk is a FIXME.
+;; new edit, even if it was inserted because of an undo.
+;; Consequently, if the user undos in region "8 to 10" of the
+;; "ccaabaddd" buffer, they could be surprised that it becomes
+;; "ccaabad", as though the first "d" became detached from the
+;; original "ddd" insertion.  This quirk is a FIXME.
 
 (defun undo-make-selective-list (start end)
   "Return a list of undo elements for the region START to END.
 The elements come from `buffer-undo-list', but we keep only the
 elements inside this region, and discard those outside this
-region. The elements' positions are adjusted so as the returned
+region.  The elements' positions are adjusted so as the returned
 list can be applied to the current buffer."
   (let ((ulist buffer-undo-list)
         ;; A list of position adjusted undo elements in the region.
@@ -2455,7 +2455,7 @@ list can be applied to the current buffer."
                 (setq end (+ end (cdr (undo-delta adjusted-undo-elt))))
                 (push adjusted-undo-elt selective-list)
                 ;; Keep (MARKER . ADJUSTMENT) if their (TEXT . POS) was
-                ;; kept. primitive-undo may discard them later.
+                ;; kept.  primitive-undo may discard them later.
                 (when (and (stringp (car-safe adjusted-undo-elt))
                            (integerp (cdr-safe adjusted-undo-elt)))
                   (let ((list-i (cdr ulist)))
@@ -2533,7 +2533,7 @@ list."
     (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
      `(nil ,prop ,val . ,(undo-adjust-beg-end beg end deltas)))
     ;; (apply DELTA START END FUN . ARGS)
-    ;; FIXME: (Prior undo in region code didn't implement this.)
+    ;; FIXME
     ;; All others return same elt
     (_ elt)))
 
@@ -2549,8 +2549,8 @@ list."
 ;; [...]
 ;;
 ;; "bb" insertion (2 . 4) adjusts to (2 . 2) because of the subsequent
-;; undo. Further adjustments to such an element should be the same as
-;; for (TEXT . POSITION) elements. The options are:
+;; undo.  Further adjustments to such an element should be the same as
+;; for (TEXT . POSITION) elements.  The options are:
 ;;
 ;;   1: POSITION adjusts using <= (use-< nil), resulting in behavior
 ;;      analogous to marker insertion-type t.
@@ -2577,7 +2577,7 @@ with < or <= based on USE-<."
             (<= (car d) pos))
       (setq pos
             ;; Don't allow pos to become less than the undo-delta
-            ;; position. This edge case is described in the overview
+            ;; position.  This edge case is described in the overview
             ;; comments.
             (max (car d) (- pos (cdr d)))))))
 
