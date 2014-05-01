@@ -1,3 +1,10 @@
+2014-05-01  Barry O'Reilly  <gundaetiapo@gmail.com>
+
+	* automated/undo-tests.el (undo-test-region-deletion): New test to
+	demonstrate bug#17235.
+	(undo-test-region-example): New test to verify example given in
+	comments for undo-make-selective-list.
+
 2014-04-07  João Távora  <joaotavora@gmail.com>
 
 	* automated/python-tests.el (python-triple-quote-pairing): New test.
