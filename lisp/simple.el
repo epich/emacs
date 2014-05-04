@@ -2051,13 +2051,71 @@ Go to the history element by the absolute history position HIST-POS."
   (goto-history-element hist-pos))
 
 
+;; FIXME: Feels hacky -- can we do a proper weak list instead?
+(defun make-weak-list (list)
+  (let* ((len (length list))
+         (weak-list (make-hash-table :size len
+                                     :weakness 'value
+                                     :test 'eq)))
+    (dotimes (i len weak-list)
+      (puthash i (pop list) weak-list))))
+
 ;Put this on C-x u, so we can force that rather than C-_ into startup msg
 (define-obsolete-function-alias 'advertised-undo 'undo "23.2")
+
+;; TODO: Comment on algorithms adding the necessary info to splice out
+;; the undo-delta from the undo-deltas? Perhaps the table's value
+;; should be (ALGO-DATA . UNDO-ELT-WEAK-LIST)?
+;;
+;; TODO: The new change group isn't closed with nil until after the
+;; command finishes. Maybe set the undo boundary at end of
+;; undo. undo-equiv-table already makes an assumption that nil will be
+;; the next onto the buffer-undo-list after undo finishes.
+;;
+;; TODO: How to represent an undo-only which undos the rest of a
+;; change group which a previous undo in region undid partially? Maybe
+;; go to element level mapping? Undo Tree likely would require
+;; disambiguating this from an undo in region. So maybe the undo
+;; boundary maps to symbol 'undo or 'undo-only. For in region, it
+;; could map to 'undo-in-region. undo-only can be in region, so
+;; careful about choice of symbols.
+(defvar undo-redo-table (make-hash-table :test 'eq :weakness 'key)
+  "Hash table mapping undo records created by an undo command to
+the records they undid. Mapping is either by change group or by
+element. Change groups are represented by the undo boundary that
+closed it.
+
+For undo and undo-only commands with no active region and
+prefix-arg N, the table's key is the newly created change
+group (a cons of buffer-undo-list), and the value is
+UNDO-ELT-WEAK-LIST, a list with weak references to N (or less)
+change groups earlier in undo history (also as cons cells of
+buffer-undo-list) which were undone.
+
+For undo and undo-only in an active region, finer grained
+referencing of undone elements is necessary. This is because an
+undo in region can undo a subset of a change group and a
+prefix-arg N makes it affect N change groups. So the newly
+created change group undos elements scattered throughout undo
+history. The undo in region consequently puts an entry in the
+hash table for each element of the new change group, where the
+key is the element and the value is a weak reference to the
+element it undid.")
 
 (defconst undo-equiv-table (make-hash-table :test 'eq :weakness t)
   "Table mapping redo records to the corresponding undo one.
 A redo record for undo-in-region maps to t.
 A redo record for ordinary undo maps to the following (earlier) undo.")
+;; Compatibility note: for non regional undos, values in
+;; undo-equiv-table are one change group past the value in
+;; undo-redo-table.
+(make-obsolete-variable
+ 'undo-equiv-table
+ "Use undo-redo-table instead.  For non regional undos, (gethash
+k undo-equiv-table) is the same as taking (gethash k
+undo-redo-table) and scanning forward one past the next nil.  In
+other words, the next change group with undo boundary stripped."
+                        "24.5")
 
 (defvar undo-in-region nil
   "Non-nil if `pending-undo-list' is not just a tail of `buffer-undo-list'.")
