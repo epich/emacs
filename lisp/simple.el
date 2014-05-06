@@ -2236,7 +2236,7 @@ then call `undo-more' one or more times to undo them."
 	(setq pending-undo-list t))))
 
 (defun primitive-undo (n list)
-  "Undo N records from the front of the list LIST.
+  "Undo N change groups from the front of the list LIST.
 Return what remains of the list."
   (undo-using-generator
    (lambda (peek?) (prog1 (cons (car list) list)
