@@ -2235,12 +2235,23 @@ then call `undo-more' one or more times to undo them."
     (if (null pending-undo-list)
 	(setq pending-undo-list t))))
 
-;; TODO: primitive-undo to create a generator to pass down to
-;; undo-with-generator, for backwards compatibility (for now) for non
-;; regional undo
 (defun primitive-undo (n list)
   "Undo N records from the front of the list LIST.
 Return what remains of the list."
+  (undo-using-generator
+   (lambda () (prog1 (cons (car list) list)
+                (pop list)))
+   n)
+  list)
+
+;; TODO: Check whether buffer-undo-list has really changed, and
+;; puthash conditionally on that, after the pcase. Or perhaps
+;; equivalently, gethash and only puthash if there's no entry
+;; yet. Account for undo boundaries, eg don't accidentally map (t
+;; . TIME) to an undo boundary.
+;;
+;; TODO: Convert use of list to use of generator
+(defun undo-using-generator (generator n)
   (let ((arg n)
         ;; In a writable buffer, enable undoing read-only text that is
         ;; so because of text properties.
@@ -2356,15 +2367,7 @@ Return what remains of the list."
     (if (and did-apply
              (eq oldlist buffer-undo-list))
         (setq buffer-undo-list
-              (cons (list 'apply 'cdr nil) buffer-undo-list))))
-  list)
-
-;; TODO: Check whether buffer-undo-list has really changed, and
-;; puthash conditionally on that, after the pcase. Or perhaps
-;; equivalently, gethash and only puthash if there's no entry
-;; yet. Account for undo boundaries, eg don't accidentally map (t
-;; . TIME) to an undo boundary.
-(defun undo-using-generator (generator num-change-groups))
+              (cons (list 'apply 'cdr nil) buffer-undo-list)))))
 
 ;; Deep copy of a list
 (defun undo-copy-list (list)
@@ -2450,15 +2453,6 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; "ccaabad", as though the first "d" became detached from the
 ;; original "ddd" insertion.  This quirk is a FIXME.
 
-;; TODO: Delete and do instead in primitive-undo
-(defun undo-make-normal-elt-generator ()
-  "Make a closure that will return successive elements of
-buffer-undo-list in the form: (ELT . CONS) where (car CONS) is
-ELT. The closure has the same interface as that from
-undo-make-regional-elt-generator."
-  (let ((list-i buffer-undo-list))
-    (lambda () (pop list-i))))
-
 (defun undo-make-regional-elt-generator (start end)
   "Make a closure that will return the next undo element in the
 region START to END in the form: (ORIG . ADJUSTED-ELT) each time
@@ -2533,13 +2527,6 @@ eq to (car ORIG-UNDO-LIST)."
                 (push delta undo-deltas)))))))
       (pop ulist))
     (nreverse selective-list)))
-
-;; TODO: Delete this
-(defun undo-make-full-list ()
-  "Return an association list of the form ((ADJUSTED-ELT
-. ORIG-UNDO-LIST) ...) for every element of buffer-undo-list, for
-use with undo."
-  (mapcar (lambda (elt) (cons elt elt)) buffer-undo-list))
 
 (defun undo-elt-in-region (undo-elt start end)
   "Determine whether UNDO-ELT falls inside the region START ... END.
