@@ -2081,11 +2081,12 @@ undo-redo-table) and scanning forward one change group."
  "24.5")
 
 (defvar undo-in-region nil
-  "Non-nil if `pending-undo-list' is not just a tail of `buffer-undo-list'.")
+  "Non-nil during an undo in region.")
 
 (defvar undo-no-redo nil
   "If t, `undo' doesn't go through redo entries.")
 
+;; TODO: Document
 (defvar pending-undo-list nil
   "Within a run of consecutive undo commands, list remaining to be undone.
 If t, we undid all the way to the end of it.")
@@ -2234,19 +2235,12 @@ then call `undo-more' one or more times to undo them."
     (if (null pending-undo-list)
 	(setq pending-undo-list t))))
 
-;; TODO: Doc ELT-GENERATOR
-(defun primitive-undo (n list &optional elt-generator)
+;; TODO: primitive-undo to create a generator to pass down to
+;; undo-with-generator, for backwards compatibility (for now) for non
+;; regional undo
+(defun primitive-undo (n list)
   "Undo N records from the front of the list LIST.
 Return what remains of the list."
-
-  ;; TODO: Consider comment is still relevant?
-  ;; This is a good feature, but would make undo-start
-  ;; unable to do what is expected.
-  ;;(when (null (car (list)))
-  ;;  ;; If the head of the list is a boundary, it is the boundary
-  ;;  ;; preceding this command.  Get rid of it and don't count it.
-  ;;  (setq list (cdr list))))
-
   (let ((arg n)
         ;; In a writable buffer, enable undoing read-only text that is
         ;; so because of text properties.
@@ -2298,6 +2292,8 @@ Return what remains of the list."
         (setq buffer-undo-list
               (cons (list 'apply 'cdr nil) buffer-undo-list))))
   list)
+
+(defun undo-using-generator (generator num-change-groups))
 
 ;; TODO: Check whether buffer-undo-list has really changed, and
 ;; puthash conditionally on that, after the pcase. Or perhaps
@@ -2406,8 +2402,8 @@ are ignored.  If BEG and END are nil, all undo elements are used."
       (user-error "No undo information in this buffer"))
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
-	    (undo-make-selective-list (min beg end) (max beg end))
-	  buffer-undo-list)))
+	    (undo-make-regional-list (min beg end) (max beg end))
+	  (undo-make-full-list))))
 
 ;; TODO: Revise comment about "ddd" adjustments.
 
@@ -2470,12 +2466,33 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; "ccaabad", as though the first "d" became detached from the
 ;; original "ddd" insertion.  This quirk is a FIXME.
 
+;; TODO: Delete and do instead in primitive-undo
+(defun undo-make-normal-elt-generator ()
+  "Make a closure that will return successive elements of
+buffer-undo-list in the form: (ELT . CONS) where (car CONS) is
+ELT. The closure has the same interface as that from
+undo-make-regional-elt-generator."
+  (let ((list-i buffer-undo-list))
+    (lambda () (pop list-i))))
+
+(defun undo-make-regional-elt-generator (start end)
+  "Make a closure that will return the next undo element in the
+region START to END in the form: (ORIG . ADJUSTED-ELT) each time
+it is called. ORIG is the cons of buffer-undo-list whose car is
+the unadjusted undo element and ADJUSTED-ELT is the same undo
+element with positions adjusted.
+
+TODO:
+(TEXT . POS) is a special case. Its ADJUSTED-ELT is of the
+form (TEXT ADJUSTED-POS . MARKER-ADJUSTMENTS).")
+
 (defun undo-make-selective-list (start end)
   (mapcar #'car (undo-make-regional-list)))
 (make-obsolete 'undo-make-selective-list
                "Use undo-make-regional-list instead."
                "24.5")
 
+;; TODO: Rename ORIG-UNDO-LIST to ORIG-UNDO-LIST-TAIL
 (defun undo-make-regional-list (start end)
   "Return an association list of the form ((ADJUSTED-ELT
 . ORIG-UNDO-LIST) ...) for use with undo in the region START to
@@ -2532,6 +2549,13 @@ eq to (car ORIG-UNDO-LIST)."
                 (push delta undo-deltas)))))))
       (pop ulist))
     (nreverse selective-list)))
+
+;; TODO: Delete this
+(defun undo-make-full-list ()
+  "Return an association list of the form ((ADJUSTED-ELT
+. ORIG-UNDO-LIST) ...) for every element of buffer-undo-list, for
+use with undo."
+  (mapcar (lambda (elt) (cons elt elt)) buffer-undo-list))
 
 (defun undo-elt-in-region (undo-elt start end)
   "Determine whether UNDO-ELT falls inside the region START ... END.
