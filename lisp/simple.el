@@ -2091,6 +2091,9 @@ undo-redo-table) and scanning forward one change group."
   "Within a run of consecutive undo commands, list remaining to be undone.
 If t, we undid all the way to the end of it.")
 
+(defvar undo-generator nil
+  "TODO")
+
 (defun undo (&optional arg)
   "Undo some previous changes.
 Repeat this command to undo more changes.
@@ -2239,8 +2242,9 @@ then call `undo-more' one or more times to undo them."
   "Undo N change groups from the front of the list LIST.
 Return what remains of the list."
   (undo-using-generator
-   (lambda (peek?) (prog1 (cons (car list) list)
-                     (unless peek? (pop list))))
+   (lambda (&optional option)
+     (prog1 (cons (car list) list)
+       (unless (eq option 'peek) (pop list))))
    n)
   list)
 
@@ -2456,33 +2460,17 @@ are ignored.  If BEG and END are nil, all undo elements are used."
 ;; "ccaabad", as though the first "d" became detached from the
 ;; original "ddd" insertion.  This quirk is a FIXME.
 
-(defun undo-make-regional-elt-generator (start end)
-  "Make a closure that will return the next undo element in the
-region START to END in the form: (ORIG . ADJUSTED-ELT) each time
-it is called. ORIG is the cons of buffer-undo-list whose car is
-the unadjusted undo element and ADJUSTED-ELT is the same undo
-element with positions adjusted.
-
-TODO:
-(TEXT . POS) is a special case. Its ADJUSTED-ELT is of the
-form (TEXT ADJUSTED-POS . MARKER-ADJUSTMENTS).")
-
-(defun undo-make-selective-list (start end)
-  (mapcar #'car (undo-make-regional-list)))
-(make-obsolete 'undo-make-selective-list
-               "Use undo-make-regional-list instead."
-               "24.5")
-
-;; TODO: Rename ORIG-UNDO-LIST to ORIG-UNDO-LIST-TAIL
-(defun undo-make-regional-list (start end)
-  "Return an association list of the form ((ADJUSTED-ELT
-. ORIG-UNDO-LIST) ...) for use with undo in the region START to
-END.  ADJUSTED-ELT is an undo element with adjusted positions and
-ORIG-UNDO-LIST is a cons of buffer-undo-list whose car is the
-original unadjusted undo element.  ADJUSTED-ELT may or may not be
-eq to (car ORIG-UNDO-LIST)."
+(defun undo-make-regional-generator (start end)
+  "Make a closure that will return the next undo element
+association in the region START to END each time it is called, in
+the form (ADJUSTED-ELT . ORIG-UNDO-LIST).  ADJUSTED-ELT is an
+undo element with adjusted positions and ORIG-UNDO-LIST is a cons
+of buffer-undo-list whose car is the original unadjusted undo
+element.  ADJUSTED-ELT may or may not be eq to (car
+ORIG-UNDO-LIST)."
   (let ((ulist buffer-undo-list)
         ;; A list of position adjusted undo elements in the region.
+        ;; TODO: Start as nil or this?
         (selective-list (list (cons nil nil)))
         ;; A list of undo-deltas for out of region undo elements.
         ;;
@@ -2493,43 +2481,51 @@ eq to (car ORIG-UNDO-LIST)."
         ;; subadjustment to account for the "ddd" problem.
         undo-deltas
         undo-elt)
-    (while ulist
-      (setq undo-elt (car ulist))
-      (cond
-       ((null undo-elt)
-        ;; Don't put two nils together in the list
-        (when (car selective-list)
-          (push (cons nil nil) selective-list)))
-       ((and (consp undo-elt) (eq (car undo-elt) t))
-        ;; This is a "was unmodified" element.  Keep it
-        ;; if we have kept everything thus far.
-        (when (not undo-deltas)
-          (push (cons undo-elt ulist) selective-list)))
-       ;; Skip over marker adjustments, instead relying
-       ;; on finding them after (TEXT . POS) elements
-       ((markerp (car-safe undo-elt))
-        nil)
-       (t
-        (let ((adjusted-undo-elt (undo-adjust-elt undo-elt
-                                                  undo-deltas)))
-          (if (undo-elt-in-region adjusted-undo-elt start end)
-              (progn
-                (setq end (+ end (cdr (undo-delta adjusted-undo-elt))))
-                (push (cons adjusted-undo-elt ulist) selective-list)
-                ;; Keep (MARKER . ADJUSTMENT) if their (TEXT . POS) was
-                ;; kept.  primitive-undo may discard them later.
-                (when (and (stringp (car-safe adjusted-undo-elt))
-                           (integerp (cdr-safe adjusted-undo-elt)))
-                  (let ((list-i (cdr ulist)))
-                    (while (markerp (car-safe (car list-i)))
-                      (let ((marker-adj (pop list-i)))
-                        (push (cons marker-adj marker-adj)
-                              selective-list))))))
-            (let ((delta (undo-delta undo-elt)))
-              (when (/= 0 (cdr delta))
-                (push delta undo-deltas)))))))
-      (pop ulist))
+    (lambda (&optional option)
+      (when ulist
+        (setq undo-elt (car ulist))
+        (cond
+         ((null undo-elt)
+          ;; Don't put two nils together in the list
+          (when (car selective-list)
+            (push (cons nil nil) selective-list)))
+         ((and (consp undo-elt) (eq (car undo-elt) t))
+          ;; This is a "was unmodified" element.  Keep it
+          ;; if we have kept everything thus far.
+          (when (not undo-deltas)
+            (push (cons undo-elt ulist) selective-list)))
+         ;; Skip over marker adjustments, instead relying
+         ;; on finding them after (TEXT . POS) elements
+         ((markerp (car-safe undo-elt))
+          nil)
+         (t
+          (let ((adjusted-undo-elt (undo-adjust-elt undo-elt
+                                                    undo-deltas)))
+            (if (undo-elt-in-region adjusted-undo-elt start end)
+                (progn
+                  (setq end (+ end (cdr (undo-delta adjusted-undo-elt))))
+                  (push (cons adjusted-undo-elt ulist) selective-list)
+                  ;; Keep (MARKER . ADJUSTMENT) if their (TEXT . POS) was
+                  ;; kept.  primitive-undo may discard them later.
+                  (when (and (stringp (car-safe adjusted-undo-elt))
+                             (integerp (cdr-safe adjusted-undo-elt)))
+                    (let ((list-i (cdr ulist)))
+                      (while (markerp (car-safe (car list-i)))
+                        (let ((marker-adj (pop list-i)))
+                          (push (cons marker-adj marker-adj)
+                                selective-list))))))
+              (let ((delta (undo-delta undo-elt)))
+                (when (/= 0 (cdr delta))
+                  (push delta undo-deltas)))))))
+        (unless (eq option 'peek)
+          (pop ulist))))
     (nreverse selective-list)))
+
+(defun undo-make-selective-list (start end)
+  (mapcar #'car (undo-make-regional-list)))
+(make-obsolete 'undo-make-selective-list
+               "Use undo-make-regional-list instead."
+               "24.5")
 
 (defun undo-elt-in-region (undo-elt start end)
   "Determine whether UNDO-ELT falls inside the region START ... END.
