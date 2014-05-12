@@ -2339,7 +2339,7 @@ Return what remains of the list."
                (while (and (setq ahead (funcall generator 'peek))
                            (markerp (car-safe (car ahead)))
                            (integerp (cdr-safe (car ahead))))
-                 (let* ((marker-adj (funcall generator))
+                 (let* ((marker-adj (car (funcall generator)))
                         (m (car marker-adj)))
                    (and (eq (marker-buffer m) (current-buffer))
                         (= pos m)
