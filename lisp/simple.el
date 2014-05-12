@@ -2525,9 +2525,15 @@ the buffer-undo-list as needed for successive undo commands."
         (pop selective-list)))))
 
 (defun undo-make-selective-list (start end)
-  (mapcar #'car (undo-make-regional-list)))
+  "TODO"
+  (let ((selective-list nil)
+        (gen (undo-make-regional-generator start end))
+        elt)
+    (while (setq elt (funcall gen))
+      (push selective-list (car elt)))
+    (nreverse selective-list)))
 (make-obsolete 'undo-make-selective-list
-               "Use undo-make-regional-list instead."
+               "Use undo-make-regional-generator instead."
                "24.5")
 
 (defun undo-elt-in-region (undo-elt start end)
