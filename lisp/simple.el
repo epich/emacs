@@ -2248,11 +2248,6 @@ Return what remains of the list."
    n)
   list)
 
-;; TODO: Check whether buffer-undo-list has really changed, and
-;; puthash conditionally on that, after the pcase. Or perhaps
-;; equivalently, gethash and only puthash if there's no entry
-;; yet. Account for undo boundaries, eg don't accidentally map (t
-;; . TIME) to an undo boundary.
 (defun undo-using-generator (generator n)
   "TODO: returns last assoc undone or nil if generator reached its end"
   (let ((arg n)
@@ -2261,14 +2256,14 @@ Return what remains of the list."
         (inhibit-read-only t)
         ;; Don't let `intangible' properties interfere with undo.
         (inhibit-point-motion-hooks t)
-        ;; We use oldlist only to check for EQ.  ++kfs
-        (oldlist buffer-undo-list)
-        (did-apply nil)
-        (next-assoc nil))
+        next-assoc)
     (while (> arg 0)
-      (while (setq next-assoc (funcall generator)) ;Exit inner loop at undo boundary.
+      ;; Exit this inner loop at an undo boundary, which would be
+      ;; next-assoc of (nil . nil).
+      (while (car (setq next-assoc (funcall generator)))
         (let ((next (car next-assoc))
-              (orig-tail (cdr next-assoc)))
+              (orig-tail (cdr next-assoc))
+              (prior-undo-list buffer-undo-list))
           ;; Handle an integer by setting point to that value.
           (pcase next
             ((pred integerp) (goto-char next))
@@ -2322,7 +2317,11 @@ Return what remains of the list."
                  (apply fun-args))
                (unless (eq currbuff (current-buffer))
                  (error "Undo function switched buffer"))
-               (setq did-apply t)))
+               ;; Make sure an apply entry produces at least one undo entry,
+               ;; so the test in `undo' for continuing an undo series
+               ;; will work right.
+               (when (eq prior-undo-list buffer-undo-list)
+                 (push (list 'apply 'cdr nil) buffer-undo-list))))
             ;; Element (STRING . POS) means STRING was deleted.
             (`(,(and string (pred stringp)) . ,(and pos (pred integerp)))
              (when (let ((apos (abs pos)))
@@ -2366,15 +2365,12 @@ Return what remains of the list."
                (set-marker marker
                            (- marker offset)
                            (marker-buffer marker))))
-            (_ (error "Unrecognized entry in undo list %S" next)))))
+            (_ (error "Unrecognized entry in undo list %S" next)))
+          ;; Map the new undo element to what it undid.  Not aware yet
+          ;; of cases where we want to map more than one new element.
+          (unless (eq prior-undo-list buffer-undo-list)
+            (puthash buffer-undo-list orig-tail undo-redo-table))))
       (setq arg (1- arg)))
-    ;; Make sure an apply entry produces at least one undo entry,
-    ;; so the test in `undo' for continuing an undo series
-    ;; will work right.
-    (if (and did-apply
-             (eq oldlist buffer-undo-list))
-        (setq buffer-undo-list
-              (cons (list 'apply 'cdr nil) buffer-undo-list)))
     next-assoc))
 
 ;; Deep copy of a list
