@@ -2054,16 +2054,6 @@ Go to the history element by the absolute history position HIST-POS."
 ;Put this on C-x u, so we can force that rather than C-_ into startup msg
 (define-obsolete-function-alias 'advertised-undo 'undo "23.2")
 
-;; TODO: Problems undo-redo-table solves:
-;;   - undo in region adjustments
-;;   - undo-only to skip over undos in region
-;;   - undo-only in region to work
-;;   - repeated undos and redos of large deletions can share deleted
-;;     Lisp_String
-;;   - Undo Tree integration (with additional change to disambiguate
-;;   - regional from nonregional, perhaps by mapping the nil boundary
-;;   - that closes a change group.
-
 (defvar undo-redo-table (make-hash-table :test 'eq :weakness t)
   "Hash table mapping undo elements created by an undo command to
 the undo element they undid.  Specifically, the keys and values
@@ -2086,11 +2076,10 @@ undo-redo-table) and scanning forward one change group."
 (defvar undo-no-redo nil
   "If t, `undo' doesn't go through redo entries.")
 
-;; TODO: Document, potential values are nil, t (means end of undo
-;; history), a closure, or cons of buffer-undo-list
 (defvar pending-undo-list nil
-  "Within a run of consecutive undo commands, list remaining to be undone.
-If t, we undid all the way to the end of it.")
+  "Within a run of consecutive undo commands, is a tail of
+buffer-undo-list for remaining undo elements, or a closure to
+generate them.  If t, there is no more to undo.")
 
 (defun undo (&optional arg)
   "Undo some previous changes.
@@ -2251,7 +2240,9 @@ Return what remains of the list."
   list)
 
 (defun undo-using-generator (generator n)
-  "TODO: returns last assoc undone or nil if generator reached its end"
+  "Undo N change groups using a GENERATOR closure to get
+successive undo elements. Return the last association returned
+from GENERATOR or nil if the end of undo history was reached."
   (let ((arg n)
         ;; In a writable buffer, enable undoing read-only text that is
         ;; so because of text properties.
@@ -2398,8 +2389,6 @@ If BEG and END are nil, all undo elements are used."
 	    (undo-make-regional-generator (min beg end) (max beg end))
 	  buffer-undo-list)))
 
-;; TODO: Revise comment about "ddd" adjustments.
-
 ;; The positions given in elements of the undo list are the positions
 ;; as of the time that element was recorded to undo history.  In
 ;; general, subsequent buffer edits render those positions invalid in
@@ -2473,17 +2462,9 @@ the buffer-undo-list as needed for successive undo commands."
   (let ((ulist buffer-undo-list)
         ;; (ADJUSTED-ELT . ORIG-UNDO-LIST) associations to be returned
         ;; from closure
-        ;;
-        ;; TODO: Start as nil or this?
         (selective-list (list (cons nil nil)))
         prev-assoc
         ;; A list of undo-deltas for out of region undo elements.
-        ;;
-        ;; TODO: Should take the form (UNDONE POS . OFFSET) where
-        ;; UNDONE is at first a reference to cons of buffer-undo-list,
-        ;; but later its the resulting undo-delta. Later still in
-        ;; undo-adjust-pos, it is temporarily swapped with a
-        ;; subadjustment to account for the "ddd" problem.
         undo-deltas)
     (lambda (&optional option)
       ;; Update selective-list with potential returns if necessary
@@ -2529,7 +2510,8 @@ the buffer-undo-list as needed for successive undo commands."
         (setq prev-assoc (pop selective-list))))))
 
 (defun undo-make-selective-list (start end)
-  "TODO"
+  "Realize a full selective undo list per
+undo-make-regional-generator."
   (let ((selective-list nil)
         (gen (undo-make-regional-generator start end))
         elt)
