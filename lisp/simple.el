@@ -2057,7 +2057,7 @@ Go to the history element by the absolute history position HIST-POS."
 (defvar undo-redo-table (make-hash-table :test 'eq :weakness t)
   "Hash table mapping undo elements created by an undo command to
 the undo element they undid.  Specifically, the keys and values
-are cons of buffer-undo-list.  The hash table is weak so as
+are eq to cons of buffer-undo-list.  The hash table is weak so as
 truncated undo elements can be garbage collected.")
 (defconst undo-equiv-table (make-hash-table :test 'eq :weakness t)
   "Table mapping redo records to the corresponding undo one.
@@ -2360,7 +2360,7 @@ from GENERATOR or nil if the end of undo history was reached."
                            (marker-buffer marker))))
             (_ (error "Unrecognized entry in undo list %S" next)))
           ;; Map the new undo element to what it undid.  Not aware yet
-          ;; of cases where we want to map more than one new element.
+          ;; of cases where we want to map all new elements.
           (unless (eq prior-undo-list buffer-undo-list)
             (puthash buffer-undo-list orig-tail undo-redo-table))))
       (setq arg (1- arg)))
@@ -2472,7 +2472,8 @@ the buffer-undo-list as needed for successive undo commands."
         (let ((undo-elt (car ulist)))
           (cond
            ((null undo-elt)
-            ;; Don't put two (nil . nil) together in the list
+            ;; Don't put two undo boundaries, represented as (nil
+            ;; . nil), together in the list
             (unless (equal (cons nil nil) prev-assoc)
               (push (cons nil nil) selective-list)))
            ((and (consp undo-elt) (eq (car undo-elt) t))
