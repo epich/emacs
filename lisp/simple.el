@@ -2086,13 +2086,11 @@ undo-redo-table) and scanning forward one change group."
 (defvar undo-no-redo nil
   "If t, `undo' doesn't go through redo entries.")
 
-;; TODO: Document
+;; TODO: Document, potential values are nil, t (means end of undo
+;; history), a closure, or cons of buffer-undo-list
 (defvar pending-undo-list nil
   "Within a run of consecutive undo commands, list remaining to be undone.
 If t, we undid all the way to the end of it.")
-
-(defvar undo-generator nil
-  "TODO")
 
 (defun undo (&optional arg)
   "Undo some previous changes.
@@ -2140,8 +2138,7 @@ as an argument limits undo to changes within the current region."
       (undo-more 1))
     ;; If we got this far, the next command should be a consecutive undo.
     (setq this-command 'undo)
-    ;; Check to see whether we're hitting a redo record, and if
-    ;; so, ask the user whether she wants to skip the redo/undo pair.
+    ;; Check to see whether we're hitting a redo record
     (let ((equiv (gethash pending-undo-list undo-equiv-table)))
       (or (eq (selected-window) (minibuffer-window))
 	  (setq message (format "%s%s!"
@@ -2227,16 +2224,19 @@ Some change-hooks test this variable to do something different.")
   "Undo back N undo-boundaries beyond what was already undone recently.
 Call `undo-start' to get ready to undo recent changes,
 then call `undo-more' one or more times to undo them."
-  (or (listp pending-undo-list)
-      (user-error (concat "No further undo information"
-                          (and undo-in-region " for region"))))
+  (when (eq pending-undo-list t)
+    (user-error (concat "No further undo information"
+                        (and undo-in-region " for region"))))
   (let ((undo-in-progress t))
-    ;; Note: The following, while pulling elements off
-    ;; `pending-undo-list' will call primitive change functions which
-    ;; will push more elements onto `buffer-undo-list'.
-    (setq pending-undo-list (primitive-undo n pending-undo-list))
-    (if (null pending-undo-list)
-	(setq pending-undo-list t))))
+    ;; Note: The following changes the buffer, and so calls primitive
+    ;; change functions that push more elements onto
+    ;; `buffer-undo-list'.
+    (unless (if (functionp pending-undo-list)
+                (undo-using-generator pending-undo-list n)
+              (setq pending-undo-list
+                    (primitive-undo n pending-undo-list)))
+      ;; Reached the end of undo history
+      (setq pending-undo-list t))))
 
 (defun primitive-undo (n list)
   "Undo N change groups from the front of the list LIST.
@@ -2254,7 +2254,7 @@ Return what remains of the list."
 ;; yet. Account for undo boundaries, eg don't accidentally map (t
 ;; . TIME) to an undo boundary.
 (defun undo-using-generator (generator n)
-  "TODO"
+  "TODO: returns last assoc undone or nil if generator reached its end"
   (let ((arg n)
         ;; In a writable buffer, enable undoing read-only text that is
         ;; so because of text properties.
@@ -2374,7 +2374,8 @@ Return what remains of the list."
     (if (and did-apply
              (eq oldlist buffer-undo-list))
         (setq buffer-undo-list
-              (cons (list 'apply 'cdr nil) buffer-undo-list)))))
+              (cons (list 'apply 'cdr nil) buffer-undo-list)))
+    next-assoc))
 
 ;; Deep copy of a list
 (defun undo-copy-list (list)
@@ -2387,17 +2388,17 @@ Return what remains of the list."
     elt))
 
 (defun undo-start (&optional beg end)
-  "Set `pending-undo-list' to the front of the undo list.
-The next call to `undo-more' will undo the most recently made change.
-If BEG and END are specified, then only undo elements
-that apply to text between BEG and END are used; other undo elements
-are ignored.  If BEG and END are nil, all undo elements are used."
+  "Set `pending-undo-list' to begin a run of undos.  The next
+call to `undo-more' will undo the next change group.  If BEG and
+END are specified, then only undo elements that apply to text
+between BEG and END are used; other undo elements are ignored.
+If BEG and END are nil, all undo elements are used."
   (if (eq buffer-undo-list t)
       (user-error "No undo information in this buffer"))
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
-	    (undo-make-regional-list (min beg end) (max beg end))
-	  (undo-make-full-list))))
+	    (undo-make-regional-generator (min beg end) (max beg end))
+	  buffer-undo-list)))
 
 ;; TODO: Revise comment about "ddd" adjustments.
 
