@@ -2476,6 +2476,7 @@ the buffer-undo-list as needed for successive undo commands."
         ;;
         ;; TODO: Start as nil or this?
         (selective-list (list (cons nil nil)))
+        prev-assoc
         ;; A list of undo-deltas for out of region undo elements.
         ;;
         ;; TODO: Should take the form (UNDONE POS . OFFSET) where
@@ -2486,12 +2487,12 @@ the buffer-undo-list as needed for successive undo commands."
         undo-deltas)
     (lambda (&optional option)
       ;; Update selective-list with potential returns if necessary
-      (when (and ulist (not selective-list))
+      (while (and ulist (not selective-list))
         (let ((undo-elt (car ulist)))
           (cond
            ((null undo-elt)
-            ;; Don't put two nils together in the list
-            (when (car selective-list)
+            ;; Don't put two (nil . nil) together in the list
+            (unless (equal (cons nil nil) prev-assoc)
               (push (cons nil nil) selective-list)))
            ((and (consp undo-elt) (eq (car undo-elt) t))
             ;; This is a "was unmodified" element.  Keep it
@@ -2517,14 +2518,15 @@ the buffer-undo-list as needed for successive undo commands."
                         (while (markerp (car-safe (car list-i)))
                           (let ((marker-adj (pop list-i)))
                             (push (cons marker-adj marker-adj)
-                                  selective-list))))))
+                                  selective-list))))
+                      (setq selective-list (nreverse selective-list))))
                 (let ((delta (undo-delta undo-elt)))
                   (when (/= 0 (cdr delta))
                     (push delta undo-deltas))))))))
-        (setq selective-list (nreverse selective-list)))
+        (pop ulist))
       (if (eq option 'peek)
           (car selective-list)
-        (pop selective-list)))))
+        (setq prev-assoc (pop selective-list))))))
 
 (defun undo-make-selective-list (start end)
   "TODO"
