@@ -2236,14 +2236,38 @@ then call `undo-more' one or more times to undo them."
     (while (> group 0)
       (while (setq assoc (pop pending-undo-list))
         (let ((elt (car assoc))
-              (orig-tail (cdr assoc)))
+              (orig-tail (cdr assoc))
+              valid-marker-adjustments)
+          (when (and (stringp (car-safe elt))
+                     (integerp (cdr-safe elt)))
+            ;; Check that marker adjustments which were recorded with
+            ;; the (STRING . POS) record are still valid, ie the
+            ;; markers haven't moved.  We check their validity before
+            ;; reinserting the string so as we don't need to mind
+            ;; marker insertion-type.
+            (while (and (markerp (car-safe (caar pending-undo-list)))
+                        (integerp (cdr-safe (caar pending-undo-list))))
+              (let* ((marker-adj (car (pop pending-undo-list)))
+                     (m (car marker-adj)))
+                (and (eq (marker-buffer m) (current-buffer))
+                     (= pos m)
+                     (push marker-adj valid-marker-adjustments)))))
+          (when (markerp car-safe elt)
+            ;; Note: even though these elements are not expected in
+            ;; the undo list, adjust them to be conservative for the
+            ;; 24.4 release.  (Bug#16818)
+            (warn "Encountered %S entry in undo list with no matching (TEXT . POS) entry"
+                  elt))
           ;; Note: The following changes the buffer, and so calls
           ;; primitive change functions that push more elements onto
           ;; `buffer-undo-list'.
           (when (undo-primitive-elt elt)
             ;; Map the new undo element to what it undid.  Not aware
             ;; yet of cases where we want to map all new elements.
-            (puthash buffer-undo-list orig-tail undo-redo-table))))
+            (puthash buffer-undo-list orig-tail undo-redo-table))
+          ;; Adjust the valid marker adjustments
+          (dolist (adj valid-marker-adjustments)
+            (undo-primitive-elt adj))))
       (setq group (1- group)))
     ;; Reached the end of undo history
     (unless pending-undo-list (setq pending-undo-list t))))
@@ -2333,38 +2357,16 @@ the Elisp manual."
        (when (let ((apos (abs pos)))
                (or (< apos (point-min)) (> apos (point-max))))
          (error "Changes to be undone are outside visible portion of buffer"))
-       (let (valid-marker-adjustments)
-         ;; Check that marker adjustments which were recorded
-         ;; with the (STRING . POS) record are still valid, ie
-         ;; the markers haven't moved.  We check their validity
-         ;; before reinserting the string so as we don't need to
-         ;; mind marker insertion-type.
-         (while (and (markerp (car-safe (car list)))
-                     (integerp (cdr-safe (car list))))
-           (let* ((marker-adj (pop list))
-                  (m (car marker-adj)))
-             (and (eq (marker-buffer m) (current-buffer))
-                  (= pos m)
-                  (push marker-adj valid-marker-adjustments))))
-         ;; Insert string and adjust point
-         (if (< pos 0)
-             (progn
-               (goto-char (- pos))
-               (insert string))
-           (goto-char pos)
-           (insert string)
-           (goto-char pos))
-         ;; Adjust the valid marker adjustments
-         (dolist (adj valid-marker-adjustments)
-           (set-marker (car adj)
-                       (- (car adj) (cdr adj))))))
+       ;; Insert string and adjust point
+       (if (< pos 0)
+           (progn
+             (goto-char (- pos))
+             (insert string))
+         (goto-char pos)
+         (insert string)
+         (goto-char pos)))
       ;; (MARKER . OFFSET) means a marker MARKER was adjusted by OFFSET.
       (`(,(and marker (pred markerp)) . ,(and offset (pred integerp)))
-       (warn "Encountered %S entry in undo list with no matching (TEXT . POS) entry"
-             next)
-       ;; Even though these elements are not expected in the undo
-       ;; list, adjust them to be conservative for the 24.4
-       ;; release.  (Bug#16818)
        (when (marker-buffer marker)
          (set-marker marker
                      (- marker offset)
@@ -2392,7 +2394,7 @@ If BEG and END are nil, all undo elements are used."
       (user-error "No undo information in this buffer"))
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
-	    (undo-make-regional-generator (min beg end) (max beg end))
+	    (undo-make-selective-list (min beg end) (max beg end))
 	  buffer-undo-list)))
 
 ;; The positions given in elements of the undo list are the positions
