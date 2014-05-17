@@ -2258,10 +2258,10 @@ Return what remains of the list."
         (undo-primitive-elt next))
       (setq arg (1- arg)))))
 
-(defun undo-primitive-elt (elt)
-  "Undo the element ELT and return non nil if changes were made.
+(defun undo-primitive-elt (next)
+  "Undo the element NEXT and return non nil if changes were made.
 
-ELT is one of the valid forms documented in the Undo section of
+NEXT is one of the valid forms documented in the Undo section of
 the Elisp manual."
   (let (;; In a writable buffer, enable undoing read-only text that is
         ;; so because of text properties.
@@ -2333,17 +2333,15 @@ the Elisp manual."
        (when (let ((apos (abs pos)))
                (or (< apos (point-min)) (> apos (point-max))))
          (error "Changes to be undone are outside visible portion of buffer"))
-       (let (valid-marker-adjustments
-             ahead)
+       (let (valid-marker-adjustments)
          ;; Check that marker adjustments which were recorded
          ;; with the (STRING . POS) record are still valid, ie
          ;; the markers haven't moved.  We check their validity
          ;; before reinserting the string so as we don't need to
          ;; mind marker insertion-type.
-         (while (and (setq ahead (funcall generator 'peek))
-                     (markerp (car-safe (car ahead)))
-                     (integerp (cdr-safe (car ahead))))
-           (let* ((marker-adj (car (funcall generator)))
+         (while (and (markerp (car-safe (car list)))
+                     (integerp (cdr-safe (car list))))
+           (let* ((marker-adj (pop list))
                   (m (car marker-adj)))
              (and (eq (marker-buffer m) (current-buffer))
                   (= pos m)
