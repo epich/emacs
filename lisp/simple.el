@@ -2237,11 +2237,12 @@ then call `undo-more' one or more times to undo them."
       (while (setq assoc (pop pending-undo-list))
         (let ((elt (car assoc))
               (orig-tail (cdr assoc)))
-          ;; Note: The following changes the buffer, and so calls primitive
-          ;; change functions that push more elements onto buffer-undo-list.
+          ;; Note: The following changes the buffer, and so calls
+          ;; primitive change functions that push more elements onto
+          ;; `buffer-undo-list'.
           (when (undo-primitive-elt elt)
-            ;; Map the new undo element to what it undid.  Not aware yet
-            ;; of cases where we want to map all new elements.
+            ;; Map the new undo element to what it undid.  Not aware
+            ;; yet of cases where we want to map all new elements.
             (puthash buffer-undo-list orig-tail undo-redo-table))))
       (setq group (1- group)))
     ;; Reached the end of undo history
@@ -2267,7 +2268,7 @@ the Elisp manual."
         (inhibit-read-only t)
         ;; Don't let `intangible' properties interfere with undo.
         (inhibit-point-motion-hooks t)
-        (prior-undo-list buffer-undo-list))
+        (oldlist buffer-undo-list))
     ;; Handle an integer by setting point to that value.
     (pcase next
       ((pred integerp) (goto-char next))
@@ -2324,7 +2325,7 @@ the Elisp manual."
          ;; Make sure an apply entry produces at least one undo entry,
          ;; so the test in `undo' for continuing an undo series
          ;; will work right.
-         (when (eq prior-undo-list buffer-undo-list)
+         (when (eq oldlist buffer-undo-list)
            (push (list 'apply 'cdr nil) buffer-undo-list))))
       ;; Element (STRING . POS) means STRING was deleted.
       (`(,(and string (pred stringp)) . ,(and pos (pred integerp)))
@@ -2370,7 +2371,7 @@ the Elisp manual."
                      (- marker offset)
                      (marker-buffer marker))))
       (_ (error "Unrecognized entry in undo list %S" next)))
-    (not (eq prior-undo-list buffer-undo-list))))
+    (not (eq oldlist buffer-undo-list))))
 
 ;; Deep copy of a list
 (defun undo-copy-list (list)
