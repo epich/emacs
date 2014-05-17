@@ -2268,6 +2268,7 @@ the Elisp manual."
         (inhibit-read-only t)
         ;; Don't let `intangible' properties interfere with undo.
         (inhibit-point-motion-hooks t)
+        ;; We use oldlist only to check for EQ.  ++kfs
         (oldlist buffer-undo-list))
     ;; Handle an integer by setting point to that value.
     (pcase next
