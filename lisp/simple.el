@@ -2054,11 +2054,17 @@ Go to the history element by the absolute history position HIST-POS."
 ;Put this on C-x u, so we can force that rather than C-_ into startup msg
 (define-obsolete-function-alias 'advertised-undo 'undo "23.2")
 
+;; Note: much of the design rationale for undo-redo-table is found in
+;; the discussion of bug 16411.
 (defvar undo-redo-table (make-hash-table :test 'eq :weakness t)
-  "Hash table mapping undo elements created by an undo command to
-the undo element they undid.  Specifically, the keys and values
-are eq to cons of buffer-undo-list.  The hash table is weak so as
-truncated undo elements can be garbage collected.")
+  "Hash table mapping undos to what they undid.
+
+Specifically, the keys and values are eq to a cons of
+buffer-undo-list such that the car of the key is an undo element
+and the car of the value is the undone element.
+
+The hash table is weak so as truncated undo elements can be
+garbage collected.")
 (defconst undo-equiv-table (make-hash-table :test 'eq :weakness t)
   "Table mapping redo records to the corresponding undo one.
 A redo record for undo-in-region maps to t.
@@ -2077,9 +2083,16 @@ undo-redo-table) and scanning forward one change group."
   "If t, `undo' doesn't go through redo entries.")
 
 (defvar pending-undo-list nil
-  "Within a run of consecutive undo commands, is a tail of
-buffer-undo-list for remaining undo elements, or a closure to
-generate them.  If t, there is no more to undo.")
+  "The pending undo elements in a run of consecutive undo commands.
+
+Specifically, this is a list of assocations of the
+form (ADJUSTED-ELT . ORIG-UNDO-LIST).  ADJUSTED-ELT is an undo
+element with adjusted positions and ORIG-UNDO-LIST is a cons of
+buffer-undo-list whose car is the original unadjusted undo
+element.  ADJUSTED-ELT may or may not be eq to (car
+ORIG-UNDO-LIST).
+
+If t, there is no more to undo.")
 
 (defun undo (&optional arg)
   "Undo some previous changes.
@@ -2128,9 +2141,7 @@ as an argument limits undo to changes within the current region."
     ;; If we got this far, the next command should be a consecutive undo.
     (setq this-command 'undo)
     ;; Check to see whether we're hitting a redo record
-    (let ((equiv (if (functionp pending-undo-list)
-                     t
-                   (gethash pending-undo-list undo-equiv-table))))
+    (let ((equiv (gethash (cdr pending-undo-list) undo-equiv-table)))
       (or (eq (selected-window) (minibuffer-window))
 	  (setq message (format "%s%s!"
                                 (if (or undo-no-redo (not equiv))
@@ -2141,7 +2152,7 @@ as an argument limits undo to changes within the current region."
 	;; undo-redo-undo-redo-... so skip to the very last equiv.
 	(while (let ((next (gethash equiv undo-equiv-table)))
 		 (if next (setq equiv next))))
-	(setq pending-undo-list equiv)))
+	(setq pending-undo-list (cons (car equiv) equiv))))
     (undo-more
      (if (numberp arg)
 	 (prefix-numeric-value arg)
@@ -2151,7 +2162,8 @@ as an argument limits undo to changes within the current region."
     ;; In the ordinary case (not within a region), map the redo
     ;; record to the following undos.
     ;; I don't know how to do that in the undo-in-region case.
-    (let ((list buffer-undo-list))
+    (let ((list buffer-undo-list)
+          (new-equiv (cdr pending-undo-list)))
       ;; Strip any leading undo boundaries there might be, like we do
       ;; above when checking.
       (while (eq (car list) nil)
@@ -2159,9 +2171,9 @@ as an argument limits undo to changes within the current region."
       (puthash list
                ;; Prevent identity mapping.  This can happen if
                ;; consecutive nils are erroneously in undo list.
-               (if (or undo-in-region (eq list pending-undo-list))
+               (if (or undo-in-region (eq list new-equiv))
                    t
-                 pending-undo-list)
+                 new-equiv)
 	       undo-equiv-table))
     ;; Don't specify a position in the undo record for the undo command.
     ;; Instead, undoing this should move point to where the change is.
@@ -2232,17 +2244,9 @@ then call `undo-more' one or more times to undo them."
 (defun primitive-undo (n list)
   "Undo N change groups from the front of the list LIST.
 Return what remains of the list."
-  (undo-using-generator
-   (lambda (&optional option)
-     (prog1 (cons (car list) list)
-       (unless (eq option 'peek) (pop list))))
-   n)
-  list)
+  )
 
-(defun undo-using-generator (generator n)
-  "Undo N change groups using a GENERATOR closure to get
-successive undo elements. Return the last association returned
-from GENERATOR or nil if the end of undo history was reached."
+(defun primitive-undo-elt (elt)
   (let ((arg n)
         ;; In a writable buffer, enable undoing read-only text that is
         ;; so because of text properties.
