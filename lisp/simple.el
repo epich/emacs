@@ -2230,145 +2230,147 @@ then call `undo-more' one or more times to undo them."
   (when (eq pending-undo-list t)
     (user-error (concat "No further undo information"
                         (and undo-in-region " for region"))))
-  (let ((undo-in-progress t))
-    ;; Note: The following changes the buffer, and so calls primitive
-    ;; change functions that push more elements onto
-    ;; `buffer-undo-list'.
-    (unless (if (functionp pending-undo-list)
-                (undo-using-generator pending-undo-list n)
-              (setq pending-undo-list
-                    (primitive-undo n pending-undo-list)))
-      ;; Reached the end of undo history
-      (setq pending-undo-list t))))
+  (let ((undo-in-progress t)
+        (group n)
+        assoc)
+    (while (> group 0)
+      (while (setq assoc (pop pending-undo-list))
+        (let ((elt (car assoc))
+              (orig-tail (cdr assoc)))
+          ;; Note: The following changes the buffer, and so calls primitive
+          ;; change functions that push more elements onto buffer-undo-list.
+          (when (undo-primitive-elt elt)
+            ;; Map the new undo element to what it undid.  Not aware yet
+            ;; of cases where we want to map all new elements.
+            (puthash buffer-undo-list orig-tail undo-redo-table))))
+      (setq group (1- group)))
+    ;; Reached the end of undo history
+    (unless pending-undo-list (setq pending-undo-list t))))
 
 (defun primitive-undo (n list)
   "Undo N change groups from the front of the list LIST.
 Return what remains of the list."
-  )
-
-(defun primitive-undo-elt (elt)
   (let ((arg n)
-        ;; In a writable buffer, enable undoing read-only text that is
+        (next nil))
+    (while (> arg 0)
+      (while (setq next (pop list))     ;Exit inner loop at undo boundary.
+        (undo-primitive-elt next))
+      (setq arg (1- arg)))))
+
+(defun undo-primitive-elt (elt)
+  "Undo the element ELT and return non nil if changes were made.
+
+ELT is one of the valid forms documented in the Undo section of
+the Elisp manual."
+  (let (;; In a writable buffer, enable undoing read-only text that is
         ;; so because of text properties.
         (inhibit-read-only t)
         ;; Don't let `intangible' properties interfere with undo.
         (inhibit-point-motion-hooks t)
-        next-assoc)
-    (while (> arg 0)
-      ;; Exit this inner loop at an undo boundary, which would be
-      ;; next-assoc of (nil . nil).
-      (while (car (setq next-assoc (funcall generator)))
-        (let ((next (car next-assoc))
-              (orig-tail (cdr next-assoc))
-              (prior-undo-list buffer-undo-list))
-          ;; Handle an integer by setting point to that value.
-          (pcase next
-            ((pred integerp) (goto-char next))
-            ;; Element (t . TIME) records previous modtime.
-            ;; Preserve any flag of NONEXISTENT_MODTIME_NSECS or
-            ;; UNKNOWN_MODTIME_NSECS.
-            (`(t . ,time)
-             ;; If this records an obsolete save
-             ;; (not matching the actual disk file)
-             ;; then don't mark unmodified.
-             (when (or (equal time (visited-file-modtime))
-                       (and (consp time)
-                            (equal (list (car time) (cdr time))
-                                   (visited-file-modtime))))
-               (when (fboundp 'unlock-buffer)
-                 (unlock-buffer))
-               (set-buffer-modified-p nil)))
-            ;; Element (nil PROP VAL BEG . END) is property change.
-            (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
-             (when (or (> (point-min) beg) (< (point-max) end))
-               (error "Changes to be undone are outside visible portion of buffer"))
-             (put-text-property beg end prop val))
-            ;; Element (BEG . END) means range was inserted.
-            (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
-             ;; (and `(,beg . ,end) `(,(pred integerp) . ,(pred integerp)))
-             ;; Ideally: `(,(pred integerp beg) . ,(pred integerp end))
-             (when (or (> (point-min) beg) (< (point-max) end))
-               (error "Changes to be undone are outside visible portion of buffer"))
-             ;; Set point first thing, so that undoing this undo
-             ;; does not send point back to where it is now.
-             (goto-char beg)
-             (delete-region beg end))
-            ;; Element (apply FUN . ARGS) means call FUN to undo.
-            (`(apply . ,fun-args)
-             (let ((currbuff (current-buffer)))
-               (if (integerp (car fun-args))
-                   ;; Long format: (apply DELTA START END FUN . ARGS).
-                   (pcase-let* ((`(,delta ,start ,end ,fun . ,args) fun-args)
-                                (start-mark (copy-marker start nil))
-                                (end-mark (copy-marker end t)))
-                     (when (or (> (point-min) start) (< (point-max) end))
-                       (error "Changes to be undone are outside visible portion of buffer"))
-                     (apply fun args) ;; Use `save-current-buffer'?
-                     ;; Check that the function did what the entry
-                     ;; said it would do.
-                     (unless (and (= start start-mark)
-                                  (= (+ delta end) end-mark))
-                       (error "Changes to be undone by function different than announced"))
-                     (set-marker start-mark nil)
-                     (set-marker end-mark nil))
-                 (apply fun-args))
-               (unless (eq currbuff (current-buffer))
-                 (error "Undo function switched buffer"))
-               ;; Make sure an apply entry produces at least one undo entry,
-               ;; so the test in `undo' for continuing an undo series
-               ;; will work right.
-               (when (eq prior-undo-list buffer-undo-list)
-                 (push (list 'apply 'cdr nil) buffer-undo-list))))
-            ;; Element (STRING . POS) means STRING was deleted.
-            (`(,(and string (pred stringp)) . ,(and pos (pred integerp)))
-             (when (let ((apos (abs pos)))
-                     (or (< apos (point-min)) (> apos (point-max))))
-               (error "Changes to be undone are outside visible portion of buffer"))
-             (let (valid-marker-adjustments
-                   ahead)
-               ;; Check that marker adjustments which were recorded
-               ;; with the (STRING . POS) record are still valid, ie
-               ;; the markers haven't moved.  We check their validity
-               ;; before reinserting the string so as we don't need to
-               ;; mind marker insertion-type.
-               (while (and (setq ahead (funcall generator 'peek))
-                           (markerp (car-safe (car ahead)))
-                           (integerp (cdr-safe (car ahead))))
-                 (let* ((marker-adj (car (funcall generator)))
-                        (m (car marker-adj)))
-                   (and (eq (marker-buffer m) (current-buffer))
-                        (= pos m)
-                        (push marker-adj valid-marker-adjustments))))
-               ;; Insert string and adjust point
-               (if (< pos 0)
-                   (progn
-                     (goto-char (- pos))
-                     (insert string))
-                 (goto-char pos)
-                 (insert string)
-                 (goto-char pos))
-               ;; Adjust the valid marker adjustments
-               (dolist (adj valid-marker-adjustments)
-                 (set-marker (car adj)
-                             (- (car adj) (cdr adj))))))
-            ;; (MARKER . OFFSET) means a marker MARKER was adjusted by OFFSET.
-            (`(,(and marker (pred markerp)) . ,(and offset (pred integerp)))
-             (warn "Encountered %S entry in undo list with no matching (TEXT . POS) entry"
-                   next)
-             ;; Even though these elements are not expected in the undo
-             ;; list, adjust them to be conservative for the 24.4
-             ;; release.  (Bug#16818)
-             (when (marker-buffer marker)
-               (set-marker marker
-                           (- marker offset)
-                           (marker-buffer marker))))
-            (_ (error "Unrecognized entry in undo list %S" next)))
-          ;; Map the new undo element to what it undid.  Not aware yet
-          ;; of cases where we want to map all new elements.
-          (unless (eq prior-undo-list buffer-undo-list)
-            (puthash buffer-undo-list orig-tail undo-redo-table))))
-      (setq arg (1- arg)))
-    next-assoc))
+        (prior-undo-list buffer-undo-list))
+    ;; Handle an integer by setting point to that value.
+    (pcase next
+      ((pred integerp) (goto-char next))
+      ;; Element (t . TIME) records previous modtime.
+      ;; Preserve any flag of NONEXISTENT_MODTIME_NSECS or
+      ;; UNKNOWN_MODTIME_NSECS.
+      (`(t . ,time)
+       ;; If this records an obsolete save
+       ;; (not matching the actual disk file)
+       ;; then don't mark unmodified.
+       (when (or (equal time (visited-file-modtime))
+                 (and (consp time)
+                      (equal (list (car time) (cdr time))
+                             (visited-file-modtime))))
+         (when (fboundp 'unlock-buffer)
+           (unlock-buffer))
+         (set-buffer-modified-p nil)))
+      ;; Element (nil PROP VAL BEG . END) is property change.
+      (`(nil . ,(or `(,prop ,val ,beg . ,end) pcase--dontcare))
+       (when (or (> (point-min) beg) (< (point-max) end))
+         (error "Changes to be undone are outside visible portion of buffer"))
+       (put-text-property beg end prop val))
+      ;; Element (BEG . END) means range was inserted.
+      (`(,(and beg (pred integerp)) . ,(and end (pred integerp)))
+       ;; (and `(,beg . ,end) `(,(pred integerp) . ,(pred integerp)))
+       ;; Ideally: `(,(pred integerp beg) . ,(pred integerp end))
+       (when (or (> (point-min) beg) (< (point-max) end))
+         (error "Changes to be undone are outside visible portion of buffer"))
+       ;; Set point first thing, so that undoing this undo
+       ;; does not send point back to where it is now.
+       (goto-char beg)
+       (delete-region beg end))
+      ;; Element (apply FUN . ARGS) means call FUN to undo.
+      (`(apply . ,fun-args)
+       (let ((currbuff (current-buffer)))
+         (if (integerp (car fun-args))
+             ;; Long format: (apply DELTA START END FUN . ARGS).
+             (pcase-let* ((`(,delta ,start ,end ,fun . ,args) fun-args)
+                          (start-mark (copy-marker start nil))
+                          (end-mark (copy-marker end t)))
+               (when (or (> (point-min) start) (< (point-max) end))
+                 (error "Changes to be undone are outside visible portion of buffer"))
+               (apply fun args) ;; Use `save-current-buffer'?
+               ;; Check that the function did what the entry
+               ;; said it would do.
+               (unless (and (= start start-mark)
+                            (= (+ delta end) end-mark))
+                 (error "Changes to be undone by function different than announced"))
+               (set-marker start-mark nil)
+               (set-marker end-mark nil))
+           (apply fun-args))
+         (unless (eq currbuff (current-buffer))
+           (error "Undo function switched buffer"))
+         ;; Make sure an apply entry produces at least one undo entry,
+         ;; so the test in `undo' for continuing an undo series
+         ;; will work right.
+         (when (eq prior-undo-list buffer-undo-list)
+           (push (list 'apply 'cdr nil) buffer-undo-list))))
+      ;; Element (STRING . POS) means STRING was deleted.
+      (`(,(and string (pred stringp)) . ,(and pos (pred integerp)))
+       (when (let ((apos (abs pos)))
+               (or (< apos (point-min)) (> apos (point-max))))
+         (error "Changes to be undone are outside visible portion of buffer"))
+       (let (valid-marker-adjustments
+             ahead)
+         ;; Check that marker adjustments which were recorded
+         ;; with the (STRING . POS) record are still valid, ie
+         ;; the markers haven't moved.  We check their validity
+         ;; before reinserting the string so as we don't need to
+         ;; mind marker insertion-type.
+         (while (and (setq ahead (funcall generator 'peek))
+                     (markerp (car-safe (car ahead)))
+                     (integerp (cdr-safe (car ahead))))
+           (let* ((marker-adj (car (funcall generator)))
+                  (m (car marker-adj)))
+             (and (eq (marker-buffer m) (current-buffer))
+                  (= pos m)
+                  (push marker-adj valid-marker-adjustments))))
+         ;; Insert string and adjust point
+         (if (< pos 0)
+             (progn
+               (goto-char (- pos))
+               (insert string))
+           (goto-char pos)
+           (insert string)
+           (goto-char pos))
+         ;; Adjust the valid marker adjustments
+         (dolist (adj valid-marker-adjustments)
+           (set-marker (car adj)
+                       (- (car adj) (cdr adj))))))
+      ;; (MARKER . OFFSET) means a marker MARKER was adjusted by OFFSET.
+      (`(,(and marker (pred markerp)) . ,(and offset (pred integerp)))
+       (warn "Encountered %S entry in undo list with no matching (TEXT . POS) entry"
+             next)
+       ;; Even though these elements are not expected in the undo
+       ;; list, adjust them to be conservative for the 24.4
+       ;; release.  (Bug#16818)
+       (when (marker-buffer marker)
+         (set-marker marker
+                     (- marker offset)
+                     (marker-buffer marker))))
+      (_ (error "Unrecognized entry in undo list %S" next)))
+    (not (eq prior-undo-list buffer-undo-list))))
 
 ;; Deep copy of a list
 (defun undo-copy-list (list)
