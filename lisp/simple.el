@@ -2235,6 +2235,9 @@ then call `undo-more' one or more times to undo them."
         assoc)
     (while (> group 0)
       (while (setq assoc (pop pending-undo-list))
+        ;; TODO: Run emacs, undo scratch insertion, assoc wrong, pending-undo-list should not have references to itself
+        (let ((cur-time (current-time))) (message "%s.%s DEBUG: assoc=%s pending-undo-list=%s" (format-time-string "%Y-%m-%dT%H:%M:%S" cur-time) (format "%06d" (nth 2 cur-time))
+                                                  assoc pending-undo-list))
         (let ((elt (car assoc))
               (orig-tail (cdr assoc))
               valid-marker-adjustments)
@@ -2395,7 +2398,12 @@ If BEG and END are nil, all undo elements are used."
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
 	    (undo-make-selective-list (min beg end) (max beg end))
-	  buffer-undo-list)))
+          (let ((list-i buffer-undo-list)
+                assoc-list)
+            (while list-i
+              (push (cons (car list-i) list-i) assoc-list)
+              (pop list-i))
+            (nreverse assoc-list)))))
 
 ;; The positions given in elements of the undo list are the positions
 ;; as of the time that element was recorded to undo history.  In
