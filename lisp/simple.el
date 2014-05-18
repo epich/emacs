@@ -2252,7 +2252,7 @@ then call `undo-more' one or more times to undo them."
                 (and (eq (marker-buffer m) (current-buffer))
                      (= pos m)
                      (push marker-adj valid-marker-adjustments)))))
-          (when (markerp car-safe elt)
+          (when (markerp (car-safe elt))
             ;; Note: even though these elements are not expected in
             ;; the undo list, adjust them to be conservative for the
             ;; 24.4 release.  (Bug#16818)
