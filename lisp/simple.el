@@ -2251,7 +2251,7 @@ then call `undo-more' one or more times to undo them."
               (let* ((marker-adj (car (pop pending-undo-list)))
                      (m (car marker-adj)))
                 (and (eq (marker-buffer m) (current-buffer))
-                     (= pos m)
+                     (= (cdr elt) m)
                      (push marker-adj valid-marker-adjustments)))))
           (when (markerp (car-safe elt))
             ;; Note: even though these elements are not expected in
