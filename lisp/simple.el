@@ -2163,18 +2163,19 @@ as an argument limits undo to changes within the current region."
     ;; record to the following undos.
     ;; I don't know how to do that in the undo-in-region case.
     (let ((list buffer-undo-list)
-          (new-equiv (cdr pending-undo-list)))
+          (new-equiv (cdr-safe pending-undo-list)))
       ;; Strip any leading undo boundaries there might be, like we do
       ;; above when checking.
       (while (eq (car list) nil)
 	(setq list (cdr list)))
-      (puthash list
-               ;; Prevent identity mapping.  This can happen if
-               ;; consecutive nils are erroneously in undo list.
-               (if (or undo-in-region (eq list new-equiv))
-                   t
-                 new-equiv)
-	       undo-equiv-table))
+      (when new-equiv
+        (puthash list
+                 ;; Prevent identity mapping.  This can happen if
+                 ;; consecutive nils are erroneously in undo list.
+                 (if (or undo-in-region (eq list new-equiv))
+                     t
+                   new-equiv)
+                 undo-equiv-table)))
     ;; Don't specify a position in the undo record for the undo command.
     ;; Instead, undoing this should move point to where the change is.
     (let ((tail buffer-undo-list)
@@ -2234,10 +2235,7 @@ then call `undo-more' one or more times to undo them."
         (group n)
         assoc)
     (while (> group 0)
-      (while (setq assoc (pop pending-undo-list))
-        ;; TODO: Run emacs, undo scratch insertion, assoc wrong, pending-undo-list should not have references to itself
-        (let ((cur-time (current-time))) (message "%s.%s DEBUG: assoc=%s pending-undo-list=%s" (format-time-string "%Y-%m-%dT%H:%M:%S" cur-time) (format "%06d" (nth 2 cur-time))
-                                                  assoc pending-undo-list))
+      (while (car (setq assoc (pop pending-undo-list)))
         (let ((elt (car assoc))
               (orig-tail (cdr assoc))
               valid-marker-adjustments)
@@ -2397,7 +2395,7 @@ If BEG and END are nil, all undo elements are used."
       (user-error "No undo information in this buffer"))
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
-	    (undo-make-selective-list (min beg end) (max beg end))
+	    (undo-make-regional-list (min beg end) (max beg end))
           (let ((list-i buffer-undo-list)
                 assoc-list)
             (while list-i
