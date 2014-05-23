@@ -2141,7 +2141,7 @@ as an argument limits undo to changes within the current region."
     ;; If we got this far, the next command should be a consecutive undo.
     (setq this-command 'undo)
     ;; Check to see whether we're hitting a redo record
-    (let ((equiv (gethash (cdr pending-undo-list) undo-equiv-table)))
+    (let ((equiv (gethash (cdr-safe pending-undo-list) undo-equiv-table)))
       (or (eq (selected-window) (minibuffer-window))
 	  (setq message (format "%s%s!"
                                 (if (or undo-no-redo (not equiv))
