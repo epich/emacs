@@ -194,7 +194,7 @@ this script.
 If you know that the required versions are in your PATH, but this
 script has made an error, then you can simply run
 
-autoreconf -i -I m4
+autoreconf -fi -I m4
 
 instead of this script.
 
@@ -204,18 +204,19 @@ EOF
     exit 1
 fi
 
-echo "Your system has the required tools, running autoreconf..."
+echo 'Your system has the required tools.'
+echo "Running 'autoreconf -fi -I m4' ..."
 
 
 ## Let autoreconf figure out what, if anything, needs doing.
 ## Use autoreconf's -f option in case autoreconf itself has changed.
-autoreconf -f -i -I m4 || exit $?
+autoreconf -fi -I m4 || exit $?
 
 ## Create a timestamp, so that './autogen.sh; make' doesn't
 ## cause 'make' to needlessly run 'autoheader'.
 echo timestamp > src/stamp-h.in || exit
 
-echo "You can now run \`./configure'."
+echo "You can now run './configure'."
 
 exit 0
 

@@ -2477,6 +2477,9 @@ the discarded elements not fully in the region."
         undo-deltas
         undo-elt)
     (while ulist
+      (when undo-no-redo
+        (while (gethash ulist undo-equiv-table)
+          (setq ulist (gethash ulist undo-equiv-table))))
       (setq undo-elt (car ulist))
       (cond
        ((null undo-elt)

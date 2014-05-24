@@ -1,11 +1,38 @@
+2014-05-22  Glenn Morris  <rgm@gnu.org>
+
+	* automated/bytecomp-tests.el (test-byte-comp-compile-and-load):
+	Fix handling of temporary elc files.
+
+	* automated/fns-tests.el (fns-tests-nreverse):
+	Update for changed string behavior.
+
+2014-05-15  Dmitry Antipov  <dmantipov@yandex.ru>
+
+	* automated/fns-tests.el: New file.
+	* automated/fns-tests.el (fns-tests-nreverse)
+	(fns-tests-nreverse-bool-vector): New tests.
+
+2014-05-08  Glenn Morris  <rgm@gnu.org>
+
+	* automated/vc-bzr.el (vc-bzr-test-bug9726, vc-bzr-test-bug9781)
+	(vc-bzr-test-faulty-bzr-autoloads):
+	Give bzr a temporary home-directory, in case the real one is missing.
+
+2014-05-08  Dmitry Gutov  <dgutov@yandex.ru>
+
+	* automated/ruby-mode-tests.el (ruby-interpolation-after-dollar-sign):
+	New test.
+
+2014-05-08  Glenn Morris  <rgm@gnu.org>
+
+	* automated/help-fns.el: New file.
+
 2014-05-01  Barry O'Reilly  <gundaetiapo@gmail.com>
 
-	* simple.el (undo-make-selective-list): New algorithm fixes
-	incorrectness of position adjustments when undoing in region.
-	(Bug#17235)
-	(undo-elt-crosses-region): Make obsolete.
-	(undo-adjust-elt, undo-adjust-beg-end, undo-adjust-pos): New
-	functions to adjust positions using undo-deltas.
+	* automated/undo-tests.el (undo-test-region-deletion): New test to
+	demonstrate bug#17235.
+	(undo-test-region-example): New test to verify example given in
+	comments for undo-make-selective-list.
 
 2014-04-25  Michael Albinus  <michael.albinus@gmx.de>
 

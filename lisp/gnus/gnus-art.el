@@ -5311,13 +5311,14 @@ Compressed files like .gz and .bz2 are decompressed."
 		    (text-property-any (point-min) (point) 'gnus-data handle)))
 	    (setq handle (get-text-property b 'gnus-data))
 	    b))
-	 contents charset coding-system)
+	 start contents charset coding-system)
     (when handle
       (when (= b (prog1
 		     btn
-		   (setq btn (previous-single-property-change
-			      (next-single-property-change btn 'gnus-data)
-			      'gnus-data))))
+		   (setq start (next-single-property-change btn 'gnus-data
+							    nil (point-max))
+			 btn (previous-single-property-change start
+							      'gnus-data))))
 	(setq b btn))
       (if (and (not arg) (mm-handle-undisplayer handle))
 	  (mm-remove-part handle)
@@ -5344,35 +5345,47 @@ Compressed files like .gz and .bz2 are decompressed."
 		    (mm-read-coding-system "Charset: "))))
 	 ((mm-handle-undisplayer handle)
 	  (mm-remove-part handle)))
-	(forward-line 1)
+	(goto-char start)
+	(unless (bolp)
+	  ;; This is a header button.
+	  (forward-line 1))
 	(mm-display-inline handle))
       ;; Toggle the button appearance between `[button]...' and `[button]'.
       (goto-char btn)
-      (gnus-insert-mime-button handle (get-text-property btn 'gnus-part)
-			       (list (mm-handle-displayed-p handle)))
-      (if (featurep 'emacs)
-	  (delete-region
-	   (point)
-	   (text-property-any (point) (point-max) 'gnus-data nil))
-	(let* ((end (text-property-any (point) (point-max) 'gnus-data nil))
-	       (annots (annotations-at end)))
-	  (delete-region (point)
-			 ;; FIXME: why isn't this simply `end'?
-			 (if annots (1+ end) end))
-	  (dolist (annot annots)
-	    (set-extent-endpoints annot (point) (point)))))
-      (unless (search-backward "\n\n" nil t)
-	;; We're in the article header.
-	(delete-char -1)
-	(dolist (ovl (gnus-overlays-in btn (point)))
-	  (gnus-overlay-put ovl 'gnus-button-attachment-extra t)
-	  (gnus-overlay-put ovl 'face nil))
-	(save-restriction
-	  (message-narrow-to-field)
-	  (let ((gnus-treatment-function-alist
-		 '((gnus-treat-highlight-headers
-		    gnus-article-highlight-headers))))
-	    (gnus-treat-article 'head))))
+      (let ((displayed-p (mm-handle-displayed-p handle)))
+	(gnus-insert-mime-button handle (get-text-property btn 'gnus-part)
+				 (list displayed-p))
+	(if (featurep 'emacs)
+	    (delete-region
+	     (point)
+	     (next-single-property-change (point) 'gnus-data nil (point-max)))
+	  (let* ((end (next-single-property-change (point) 'gnus-data))
+		 (annots (annotations-at (or end (point-max)))))
+	    (delete-region (point)
+			   (if end
+			       (if annots (1+ end) end)
+			     (point-max)))
+	    (dolist (annot annots)
+	      (set-extent-endpoints annot (point) (point)))))
+	(setq start (point))
+	(if (search-backward "\n\n" nil t)
+	    (progn
+	      (goto-char start)
+	      (unless (or displayed-p (eolp))
+		;; Add extra newline.
+		(insert (propertize (buffer-substring (1- start) start)
+				    'gnus-undeletable t))))
+	  ;; We're in the article header.
+	  (delete-char -1)
+	  (dolist (ovl (gnus-overlays-in btn (point)))
+	    (gnus-overlay-put ovl 'gnus-button-attachment-extra t)
+	    (gnus-overlay-put ovl 'face nil))
+	  (save-restriction
+	    (message-narrow-to-field)
+	    (let ((gnus-treatment-function-alist
+		   '((gnus-treat-highlight-headers
+		      gnus-article-highlight-headers))))
+	      (gnus-treat-article 'head)))))
       (goto-char b))))
 
 (defun gnus-mime-set-charset-parameters (handle charset)
@@ -5683,62 +5696,84 @@ all parts."
 	     (with-current-buffer gnus-summary-buffer
 	       gnus-newsgroup-ignored-charsets)
 	   nil))
-	retval)
+	start retval)
     (unwind-protect
 	(progn
 	  (let ((win (gnus-get-buffer-window (current-buffer) t)))
 	    (when win
 	      (select-window win)
 	      (goto-char point)))
-	  (setq point (previous-single-property-change
-		       (next-single-property-change point 'gnus-data)
-		       'gnus-data))
-	  (forward-line)
+	  (setq start (next-single-property-change point 'gnus-data
+						   nil (point-max))
+		point (previous-single-property-change start 'gnus-data))
 	  (if (mm-handle-displayed-p handle)
 	      ;; This will remove the part.
 	      (setq retval (mm-display-part handle))
-	    (save-window-excursion
-	      (save-restriction
-		;; FIXME: nothing is displayed in the article buffer
-		;; while prompting a user for a file name.
-		(narrow-to-region (point)
-				  (if (eobp) (point) (1+ (point))))
-		(gnus-bind-safe-url-regexp
-		 (setq retval (mm-display-part handle)))
-		;; We narrow to the part itself and
-		;; then call the treatment functions.
-		(goto-char (point-min))
-		(forward-line 1)
-		(narrow-to-region (point) (point-max))
-		(gnus-treat-article
-		 nil id
-		 (gnus-article-mime-total-parts)
-		 (mm-handle-media-type handle))))))
+	    (let ((part (or (and (mm-inlinable-p handle)
+				 (mm-inlined-p handle)
+				 t)
+			    (with-temp-buffer
+			      (gnus-bind-safe-url-regexp
+			       (setq retval (mm-display-part handle)))
+			      (unless (zerop (buffer-size))
+				(buffer-string))))))
+	      (goto-char start)
+	      (unless (bolp)
+		;; This is a header button.
+		(forward-line 1))
+	      (cond ((stringp part)
+		     (save-restriction
+		       (narrow-to-region (point)
+					 (progn
+					   (insert part)
+					   (unless (bolp) (insert "\n"))
+					   (point)))
+		       (gnus-treat-article nil id
+					   (gnus-article-mime-total-parts)
+					   (mm-handle-media-type handle))
+		       (mm-handle-set-undisplayer
+			handle
+			`(lambda ()
+			   (let ((inhibit-read-only t))
+			     (delete-region ,(copy-marker (point-min) t)
+					    ,(point-max-marker)))))))
+		    (part
+		     (mm-display-inline handle))))))
       (goto-char point)
       ;; Toggle the button appearance between `[button]...' and `[button]'.
-      (gnus-insert-mime-button handle id (list (mm-handle-displayed-p handle)))
-      (if (featurep 'emacs)
-	  (delete-region
-	   (point) (text-property-any (point) (point-max) 'gnus-data nil))
-	(let* ((end (text-property-any (point) (point-max) 'gnus-data nil))
-	       (annots (annotations-at end)))
-	  (delete-region (point)
-			 ;; FIXME: why isn't this simply `end'?
-			 (if annots (1+ end) end))
-	  (dolist (annot annots)
-	    (set-extent-endpoints annot (point) (point)))))
-      (unless (search-backward "\n\n" nil t)
-	;; We're in the article header.
-	(delete-char -1)
-	(dolist (ovl (gnus-overlays-in point (point)))
-	  (gnus-overlay-put ovl 'gnus-button-attachment-extra t)
-	  (gnus-overlay-put ovl 'face nil))
-	(save-restriction
-	  (message-narrow-to-field)
-	  (let ((gnus-treatment-function-alist
-		 '((gnus-treat-highlight-headers
-		    gnus-article-highlight-headers))))
-	    (gnus-treat-article 'head))))
+      (let ((displayed-p (mm-handle-displayed-p handle)))
+	(gnus-insert-mime-button handle id (list displayed-p))
+	(if (featurep 'emacs)
+	    (delete-region
+	     (point)
+	     (next-single-property-change (point) 'gnus-data nil (point-max)))
+	  (let* ((end (next-single-property-change (point) 'gnus-data))
+		 (annots (annotations-at (or end (point-max)))))
+	    (delete-region (point)
+			   (if end
+			       (if annots (1+ end) end)
+			     (point-max)))
+	    (dolist (annot annots)
+	      (set-extent-endpoints annot (point) (point)))))
+	(setq start (point))
+	(if (search-backward "\n\n" nil t)
+	    (progn
+	      (goto-char start)
+	      (unless (or displayed-p (eolp))
+		;; Add extra newline.
+		(insert (propertize (buffer-substring (1- start) start)
+				    'gnus-undeletable t))))
+	  ;; We're in the article header.
+	  (delete-char -1)
+	  (dolist (ovl (gnus-overlays-in point (point)))
+	    (gnus-overlay-put ovl 'gnus-button-attachment-extra t)
+	    (gnus-overlay-put ovl 'face nil))
+	  (save-restriction
+	    (message-narrow-to-field)
+	    (let ((gnus-treatment-function-alist
+		   '((gnus-treat-highlight-headers
+		      gnus-article-highlight-headers))))
+	      (gnus-treat-article 'head)))))
       (goto-char point)
       (if (window-live-p window)
 	  (select-window window)))
@@ -5985,7 +6020,6 @@ If nil, don't show those extra buttons."
   (let ((type (mm-handle-media-type handle))
 	(ignored gnus-ignored-mime-types)
 	(not-attachment t)
-	(move nil)
 	display text)
     (catch 'ignored
       (progn
@@ -6011,9 +6045,11 @@ If nil, don't show those extra buttons."
 	    (setq display t)
 	  (when (equal (mm-handle-media-supertype handle) "text")
 	    (setq text t)))
-	(let ((id (1+ (length gnus-article-mime-handle-alist)))
+	(let ((id (car (rassq handle gnus-article-mime-handle-alist)))
 	      beg)
-	  (push (cons id handle) gnus-article-mime-handle-alist)
+	  (unless id
+	    (setq id (1+ (length gnus-article-mime-handle-alist)))
+	    (push (cons id handle) gnus-article-mime-handle-alist))
 	  (when (and display
 		     (equal (mm-handle-media-supertype handle) "message"))
 	    (insert-char
@@ -6025,31 +6061,28 @@ If nil, don't show those extra buttons."
 		    (not (gnus-unbuttonized-mime-type-p type))
 		    (eq id gnus-mime-buttonized-part-id))
 	    (gnus-insert-mime-button
-	     handle id (list (or display (and not-attachment text))))
-	    (gnus-article-insert-newline)
-	    ;; Remember modify the number of forward lines.
-	    (setq move t))
+	     handle id (list (or display (and not-attachment text)))))
 	  (setq beg (point))
 	  (cond
 	   (display
-	    (when move
-	      (forward-line -1)
-	      (setq beg (point)))
 	    (let ((mail-parse-charset gnus-newsgroup-charset)
 		  (mail-parse-ignored-charsets
 		   (save-excursion (condition-case ()
 				       (set-buffer gnus-summary-buffer)
 				     (error))
 				   gnus-newsgroup-ignored-charsets)))
-	      (gnus-bind-safe-url-regexp (mm-display-part handle t)))
-	    (goto-char (point-max)))
+	      (gnus-bind-safe-url-regexp (mm-display-part handle t))))
 	   ((and text not-attachment)
-	    (when move
-	      (forward-line -1)
-	      (setq beg (point)))
-	    (gnus-article-insert-newline)
-	    (mm-display-inline handle)
-	    (goto-char (point-max))))
+	    (mm-display-inline handle)))
+	  (goto-char (point-max))
+	  (if (string-match "\\`image/" type)
+	      (gnus-article-insert-newline)
+	    (if (prog1
+		    (= (skip-chars-backward "\n") -1)
+		  (forward-char 1))
+		(gnus-article-insert-newline)
+	      (put-text-property (point) (point-max) 'gnus-undeletable t))
+	    (goto-char (point-max)))
 	  ;; Do highlighting.
 	  (save-excursion
 	    (save-restriction
@@ -6334,7 +6367,7 @@ in the body.  Use `gnus-header-face-alist' to highlight buttons."
 			(setcar handle (caar handle))))
 		    flat)
 	      flat))))
-      (let ((case-fold-search t) buttons st)
+      (let ((case-fold-search t) buttons st handle)
 	(save-excursion
 	  (save-restriction
 	    (widen)
@@ -6371,7 +6404,9 @@ in the body.  Use `gnus-header-face-alist' to highlight buttons."
 		(dolist (button (nreverse buttons))
 		  (setq st (point))
 		  (insert " ")
-		  (gnus-insert-mime-button (cdr button) (car button))
+		  (mm-handle-set-undisplayer
+		   (setq handle (copy-sequence (cdr button))) nil)
+		  (gnus-insert-mime-button handle (car button))
 		  (skip-chars-backward "\t\n ")
 		  (delete-region (point) (point-max))
 		  (when (> (current-column) (window-width))

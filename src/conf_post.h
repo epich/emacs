@@ -34,9 +34,10 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include <stdbool.h>
 
-/* The pre-C99 <stdbool.h> emulation doesn't work for bool bitfields.
-   Nor does compiling Objective-C with standard GCC.  */
-#if __STDC_VERSION__ < 199901 || NS_IMPL_GNUSTEP
+/* The type of bool bitfields.  Needed to compile Objective-C with
+   standard GCC.  It was also needed to port to pre-C99 compilers,
+   although we don't care about that any more.  */
+#if NS_IMPL_GNUSTEP
 typedef unsigned int bool_bf;
 #else
 typedef bool bool_bf;
@@ -224,6 +225,20 @@ extern void _DebPrint (const char *fmt, ...);
 
 #define ATTRIBUTE_CONST _GL_ATTRIBUTE_CONST
 
+#if 3 <= __GNUC__
+# define ATTRIBUTE_MALLOC __attribute__ ((__malloc__))
+#else
+# define ATTRIBUTE_MALLOC
+#endif
+
+#if 4 < __GNUC__ + (3 <= __GNUC_MINOR__)
+# define ATTRIBUTE_ALLOC_SIZE(args) __attribute__ ((__alloc_size__ args))
+#else
+# define ATTRIBUTE_ALLOC_SIZE(args)
+#endif
+
+#define ATTRIBUTE_MALLOC_SIZE(args) ATTRIBUTE_MALLOC ATTRIBUTE_ALLOC_SIZE (args)
+
 /* Work around GCC bug 59600: when a function is inlined, the inlined
    code may have its addresses sanitized even if the function has the
    no_sanitize_address attribute.  This bug is fixed in GCC 4.9.0 and
@@ -293,14 +308,11 @@ extern void _DebPrint (const char *fmt, ...);
 
 /* To use the struct hack with N elements, declare the struct like this:
      struct s { ...; t name[FLEXIBLE_ARRAY_MEMBER]; };
-   and allocate (offsetof (struct s, name) + N * sizeof (t)) bytes.  */
-#if 199901 <= __STDC_VERSION__
-# define FLEXIBLE_ARRAY_MEMBER
-#elif __GNUC__ && !defined __STRICT_ANSI__
-# define FLEXIBLE_ARRAY_MEMBER 0
-#else
-# define FLEXIBLE_ARRAY_MEMBER 1
-#endif
+   and allocate (offsetof (struct s, name) + N * sizeof (t)) bytes.
+
+   This macro used to expand to something different on pre-C99 compilers.
+   FIXME: Remove it, and remove all uses.  */
+#define FLEXIBLE_ARRAY_MEMBER
 
 /* Use this to suppress gcc's `...may be used before initialized' warnings. */
 #ifdef lint
