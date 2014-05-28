@@ -2054,8 +2054,13 @@ Go to the history element by the absolute history position HIST-POS."
 ;Put this on C-x u, so we can force that rather than C-_ into startup msg
 (define-obsolete-function-alias 'advertised-undo 'undo "23.2")
 
-;; Note: much of the design rationale for undo-redo-table is found in
-;; the discussion of bug 16411.
+;; Note: We considered a design whereby one entry in the
+;; undo-redo-table maps a change group to a list of undone elements or
+;; groups.  This design does not work because the value stored in
+;; undo-redo-table would need to be a non weak list with weak
+;; references into buffer-undo-list.  Currently Elisp only features
+;; weak references when they are directly keys or values of a weak
+;; hash table, so a list containing weak references is not supported.
 (defvar undo-redo-table (make-hash-table :test 'eq :weakness t)
   "Hash table mapping undos to what they undid.
 
