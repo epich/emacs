@@ -2400,7 +2400,15 @@ If BEG and END are nil, all undo elements are used."
       (user-error "No undo information in this buffer"))
   (setq pending-undo-list
 	(if (and beg end (not (= beg end)))
-	    (undo-make-regional-list (min beg end) (max beg end))
+            (let ((start (min beg end))
+                  (end (max beg end)))
+              (undo-make-selective-list
+               (lambda (adjusted-undo-elt orig-tail)
+                 (let ((in-region (undo-elt-in-region adjusted-undo-elt
+                                                      start end)))
+                   (when in-region
+                     (setq end (+ end (cdr (undo-delta adjusted-undo-elt)))))
+                   in-region))))
           (let ((list-i buffer-undo-list)
                 assoc-list)
             (while list-i
@@ -2467,7 +2475,7 @@ If BEG and END are nil, all undo elements are used."
 ;; "ccaabad", as though the first "d" became detached from the
 ;; original "ddd" insertion.  This quirk is a FIXME.
 
-(defun undo-make-regional-list (start end)
+(defun undo-make-selective-list (keep-func)
   "Return a list of undo associations for the region START to END,
 
 The undo associations are of the form (ADJUSTED-ELT
@@ -2505,9 +2513,8 @@ the discarded elements not fully in the region."
        (t
         (let ((adjusted-undo-elt (undo-adjust-elt undo-elt
                                                   undo-deltas)))
-          (if (undo-elt-in-region adjusted-undo-elt start end)
+          (if (funcall keep-func adjusted-undo-elt ulist)
               (progn
-                (setq end (+ end (cdr (undo-delta adjusted-undo-elt))))
                 (push (cons adjusted-undo-elt ulist) selective-list)
                 ;; Keep (MARKER . ADJUSTMENT) if their (TEXT . POS) was
                 ;; kept.  primitive-undo may discard them later.
@@ -2523,14 +2530,6 @@ the discarded elements not fully in the region."
                 (push delta undo-deltas)))))))
       (pop ulist))
     (nreverse selective-list)))
-
-(defun undo-make-selective-list (start end)
-  "Realize a full selective undo list per
-undo-make-regional-generator."
-  (mapcar #'car (undo-make-regional-list start end)))
-(make-obsolete 'undo-make-selective-list
-               "Use undo-make-regional-list instead."
-               "24.5")
 
 (defun undo-elt-in-region (undo-elt start end)
   "Determine whether UNDO-ELT falls inside the region START ... END.
