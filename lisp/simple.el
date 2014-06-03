@@ -2087,6 +2087,9 @@ undo-redo-table) and scanning forward one change group."
 (defvar undo-no-redo nil
   "If t, `undo' doesn't go through redo entries.")
 
+;; TODO: Should we move to an undo.el file, then use cl-defstruct to
+;; hold adjusted-elt and orig-undo-list? Then pending-undo-list would
+;; be a list of the struct.
 (defvar pending-undo-list nil
   "The pending undo elements in a run of consecutive undo commands.
 
@@ -2416,6 +2419,14 @@ If BEG and END are nil, all undo elements are used."
               (pop list-i))
             (nreverse assoc-list)))))
 
+;; TODO: Create the lambda for undo-only and undo-only in region.
+;; undo-only's lambda would keep a list of of undos to skip, using an
+;; approach as described in bug 16411. At first, use a simple list and
+;; if performance issues arise, some options are:
+;;
+;;   - Use a BST or skip list data structure instead of the simple list
+;;   - Revive the generators to allow short circuiting
+
 ;; The positions given in elements of the undo list are the positions
 ;; as of the time that element was recorded to undo history.  In
 ;; general, subsequent buffer edits render those positions invalid in
@@ -2486,7 +2497,34 @@ the discarded elements not fully in the region."
   (let ((ulist buffer-undo-list)
         ;; The list of (ADJUSTED-ELT . ORIG-UNDO-LIST) to return
         (selective-list (list (cons nil nil)))
-        ;; A list of undo-deltas for out of region undo elements.
+        ;; A list of elements of the form: ((POS . OFFSET)
+        ;; UNDONE-DELTA . SUB-ADJUSTMENT) for each element that is not
+        ;; kept per keep-func.
+        ;;
+        ;; (POS . OFFSET) is as documented for the undo-delta
+        ;; function.
+        ;;
+        ;; UNDONE-DELTA is initially nil.  When iteration over the
+        ;; buffer-undo-list encounters the undone element,
+        ;; UNDONE-DELTA becomes the cons of undo-deltas whose car is
+        ;; its eq undo-delta (ie a reference towards the head of the
+        ;; undo-deltas list). TODO: This is worded confusingly
+        ;;
+        ;; SUB-ADJUSTMENT is normally nil, but undo-adjust-pos
+        ;; temporarily sets it for the edge case where the position
+        ;; being adjusted through the undo-deltas is inside a deleted
+        ;; region.  Thus this is very similar in purpose to marker
+        ;; adjustments.
+        ;;
+        ;; TODO: How about a separate unencountered-undones alist of:
+        ;; (BUFFER-UNDO-LIST-TAIL . UNDO-DELTAS-TAIL). As we iterate
+        ;; ulist, we push to undo-deltas, look for the assoc, if found
+        ;; set the UNDONE-DELTA of the structure at (car
+        ;; UNDO-DELTAS-TAIL) to the newly pushed head of undo-deltas,
+        ;; and remove the assoc.
+        ;;
+        ;; TODO: Maybe rename to undo-delta-records to not confuse the
+        ;; "undo-delta" terminology?
         undo-deltas
         undo-elt)
     (while ulist
@@ -2624,6 +2662,8 @@ list."
 ;;
 ;; There was no strong reason to prefer one or the other, except that
 ;; the first is more consistent with prior undo in region behavior.
+;;
+;; TODO: Document how SUB-ADJUSTMENT relates to the discussion above.
 (defun undo-adjust-beg-end (beg end deltas)
   "Return cons of adjustments to BEG and END by the undo DELTAS
 list."
@@ -2635,6 +2675,14 @@ list."
 (defun undo-adjust-pos (pos deltas &optional use-<)
   "Return adjustment of POS by the undo DELTAS list, comparing
 with < or <= based on USE-<."
+  ;; TODO: Set all SUB-ADJUSTMENT to nil. It can be before or after
+  ;; dolist. After maintains invariants better. Before is more robust
+  ;; to errors, but if an error occurs, it ends the scope of
+  ;; undo-deltas anyway.
+  ;;
+  ;; TODO: Basically, if the UNDONE field is a reference into
+  ;; undo-deltas and not buffer-undo-list, then apply *its*
+  ;; sub-adjustment.
   (dolist (d deltas pos)
     (when (if use-<
               (< (car d) pos)
@@ -2645,10 +2693,11 @@ with < or <= based on USE-<."
             ;; comments.
             (max (car d) (- pos (cdr d)))))))
 
-;; Return the first affected buffer position and the delta for an undo element
-;; delta is defined as the change in subsequent buffer positions if we *did*
-;; the undo.
 (defun undo-delta (undo-elt)
+  "Return the undo-delta for UNDO-ELT in the form (POS . OFFSET).
+
+OFFSET is the change in buffer positions after POS if we *did*
+the undo of UNDO-ELT."
   (if (consp undo-elt)
       (cond ((stringp (car undo-elt))
 	     ;; (TEXT . POSITION)
