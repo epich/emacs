@@ -2481,28 +2481,45 @@ the discarded elements not fully in the region."
   (let ((ulist buffer-undo-list)
         ;; The list of (ADJUSTED-ELT . ORIG-UNDO-LIST) to return
         (selective-list (list (cons nil nil)))
-        ;; A list of elements of the form: ((POS . OFFSET)
-        ;; ADJUSTMENT UNDONE-ULIST-TAIL ORIG-DELTA-TAIL)
+        ;; A list of elements of the form: ((POS . OFFSET) AUX-OFFSET
+        ;; UNDONE-ULIST-TAIL ORIG-DELTA-TAIL)
         ;;
         ;; (POS . OFFSET) is as documented for the undo-delta
-        ;; function.
+        ;; function. The succession of (POS . OFFSET) in
+        ;; undo-delta-data conveys how positions adjust as they are
+        ;; carried forward in time to the current buffer.
         ;;
-        ;; ADJUSTMENT is an adjustment additional to the OFFSET and is
-        ;; only temporarily set during undo-adjust-pos.  It is used
-        ;; for the edge case where the position being adjusted through
-        ;; the deltas is inside a deleted region.  Thus this is very
-        ;; similar in purpose to marker adjustments.
-        ;; TODO: Consolidate this with the "ddd" edge case documentation.
+        ;; To implement undo-in-region and undo-only functionality, it
+        ;; is essential for undo elements and what they undid to
+        ;; correctly cancel out. Normally their (POS . OFFSET) values
+        ;; have this effect, except in the case of [TODO: Consolidate
+        ;; this with the "ddd" edge case documentation].
+        ;;
+        ;; Also note that splicing out an element and what it undid is
+        ;; not sound, because doing so would change the effects of
+        ;; (POS . OFFSET) elements in between the two (at their place
+        ;; in history, there is no cancelling out).
+        ;;
+        ;; AUX-OFFSET is an adjustment additional to the OFFSET and is
+        ;; only temporarily set during undo-adjust-pos for the case
+        ;; where the position being adjusted through the deltas is
+        ;; inside a region of deletion.  This is very similar in
+        ;; purpose to marker adjustments.
         ;;
         ;; UNDONE-ULIST-TAIL is a tail of buffer-undo-list whose car
-        ;; is the undone element, or nil if there is none.
+        ;; is the undone element, or nil if there is none.  When non
+        ;; nil, this facilitates later initializing ORIG-DELTA-TAIL of
+        ;; an element to push to undo-delta-data.
         ;;
         ;; ORIG-DELTA-TAIL is a reference deeper into the
-        ;; undo-delta-data list.  ORIG-DELTA-TAIL's car's
+        ;; undo-delta-data list.  The information it conveys is to the
+        ;; undo-delta-data as undo-redo-table is to the
+        ;; buffer-undo-list, except that the link is from undone to
+        ;; original.  Put another way, ORIG-DELTA-TAIL's car's
         ;; UNDONE-ULIST-TAIL's car is the undo element which the (POS
-        ;; . OFFSET) was created from.  The usefulness of
-        ;; ORIG-DELTA-TAIL is to efficiently set the ADJUSTMENT at the
-        ;; ORIG-DELTA-TAIL during undo-adjust-pos.
+        ;; . OFFSET) was created from.  Its purpose is to facilitate
+        ;; efficiently setting the AUX-OFFSET at the ORIG-DELTA-TAIL
+        ;; during undo-adjust-pos.
         undo-delta-data
         ;; A list of undones the ulist iterator has not visited yet,
         ;; but whose original has been.  Each element is of the form:
@@ -2621,7 +2638,6 @@ is not *inside* the region START...END."
 (defun undo-adjust-elt (elt deltas)
   "Return adjustment of undo element ELT by the undo DELTAS
 list."
-  ;; TODO: account for deltas new form
   (pcase elt
     ;; POSITION
     ((pred integerp)
@@ -2665,7 +2681,7 @@ list."
 ;; There was no strong reason to prefer one or the other, except that
 ;; the first is more consistent with prior undo in region behavior.
 ;;
-;; TODO: Document how SUB-ADJUSTMENT relates to the discussion above.
+;; TODO: Document how AUX-OFFSET relates to the discussion above.
 (defun undo-adjust-beg-end (beg end deltas)
   "Return cons of adjustments to BEG and END by the undo DELTAS
 list."
@@ -2677,9 +2693,11 @@ list."
 (defun undo-adjust-pos (pos deltas &optional use-<)
   "Return adjustment of POS by the undo DELTAS list, comparing
 with < or <= based on USE-<."
-  ;; TODO: Set all SUB-ADJUSTMENT to nil or 0. It can be before or
-  ;; after dolist. After maintains invariants better. Before is more
-  ;; robust to errors, but if an error occurs, it ends the scope of
+  ;; TODO: account for deltas new form
+  ;;
+  ;; TODO: Set all AUX-OFFSET to nil or 0. It can be before or after
+  ;; dolist. After maintains invariants better. Before is more robust
+  ;; to errors, but if an error occurs, it ends the scope of
   ;; undo-deltas anyway.
   ;;
   ;; TODO: If the undo-delta-data references forwards, then we know we
